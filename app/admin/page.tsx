@@ -77,15 +77,14 @@ const [clientName, setClientName] = useState("");
     <p>
       Link:{" "}
       <strong>
-        http://localhost:3000/?cliente={clientName.toLowerCase()}
+`https://afrikanitas-gallery-3d68mcc4a-afrikanitas-studio-s-projects.vercel.app/?cliente=${clientName.toLowerCase()}`
       </strong>
     </p>
 
     <button
       onClick={() =>
         navigator.clipboard.writeText(
-          `http://localhost:3000/?cliente=${clientName.toLowerCase()}`
-        )
+`https://afrikanitas-gallery-3d68mcc4a-afrikanitas-studio-s-projects.vercel.app/?cliente=${clientName.toLowerCase()}`
       }
       style={{
         padding: "10px 18px",
