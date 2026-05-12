@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "./lib/supabase";
 
-export default function Home() {
+function GalleryContent() {
   const searchParams = useSearchParams();
   const cliente = searchParams.get("cliente") || "Cliente sem nome";
 
@@ -20,8 +20,6 @@ export default function Home() {
   ];
 
   const togglePhoto = (photo: string) => {
-    setSuccess(false);
-
     if (selected.includes(photo)) {
       setSelected(selected.filter((p) => p !== photo));
     } else {
@@ -29,25 +27,14 @@ export default function Home() {
     }
   };
 
-  const sendSelection = async () => {
-    if (selected.length === 0) {
-      alert("Selecione pelo menos uma foto.");
-      return;
-    }
-
+  const saveSelection = async () => {
     setLoading(true);
 
     for (const photo of selected) {
-      const { error } = await supabase.from("selections").insert({
+      await supabase.from("selections").insert({
         client_name: cliente,
         photo_name: photo,
       });
-
-      if (error) {
-        setLoading(false);
-        alert("Erro ao enviar: " + error.message);
-        return;
-      }
     }
 
     setLoading(false);
@@ -59,140 +46,74 @@ export default function Home() {
       style={{
         padding: "40px",
         fontFamily: "Arial",
-        background: "#f8f5ef",
-        minHeight: "100vh",
-        color: "#111",
       }}
     >
+      <h1>Afrikanitas Studio</h1>
+
+      <p>
+        <strong>Cliente:</strong> {cliente}
+      </p>
+
+      <p>Escolha as suas fotografias favoritas.</p>
+
+      <p>{selected.length} fotografia(s) selecionada(s)</p>
+
       <div
         style={{
-          maxWidth: "1200px",
-          margin: "0 auto",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+          gap: "20px",
+          marginTop: "30px",
         }}
       >
-        <h1
-          style={{
-            fontSize: "52px",
-            marginBottom: "10px",
-            letterSpacing: "-1px",
-          }}
-        >
-          Afrikanitas Studio
-        </h1>
-
-        <p
-          style={{
-            fontSize: "18px",
-            marginBottom: "10px",
-          }}
-        >
-          Cliente: <strong>{cliente}</strong>
-        </p>
-
-        <p
-          style={{
-            fontSize: "18px",
-            marginBottom: "10px",
-          }}
-        >
-          Escolha as suas fotografias favoritas.
-        </p>
-
-        <p
-          style={{
-            fontSize: "16px",
-            marginBottom: "35px",
-            color: "#555",
-          }}
-        >
-          {selected.length} fotografia(s) selecionada(s)
-        </p>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-            gap: "22px",
-          }}
-        >
-          {photos.map((photo) => (
-            <div
-              key={photo}
+        {photos.map((photo) => (
+          <div key={photo}>
+            <img
+              src={photo}
+              alt={photo}
+              onClick={() => togglePhoto(photo)}
               style={{
-                position: "relative",
-                overflow: "hidden",
-                borderRadius: "18px",
-                background: "#eee",
+                width: "100%",
+                borderRadius: "20px",
+                cursor: "pointer",
+                border: selected.includes(photo)
+                  ? "5px solid black"
+                  : "2px solid #ddd",
               }}
-            >
-              <img
-                src={photo}
-                onClick={() => togglePhoto(photo)}
-                style={{
-                  width: "100%",
-                  height: "300px",
-                  objectFit: "cover",
-                  borderRadius: "18px",
-                  cursor: "pointer",
-                  display: "block",
-                }}
-              />
-
-              {selected.includes(photo) && (
-                <div
-                  style={{
-                    position: "absolute",
-                    bottom: "12px",
-                    right: "12px",
-                    width: "30px",
-                    height: "30px",
-                    borderRadius: "50%",
-                    background: "rgba(0, 0, 0, 0.75)",
-                    color: "#fff",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "15px",
-                  }}
-                >
-                  ♥
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {success && (
-          <p
-            style={{
-              marginTop: "25px",
-              marginBottom: "20px",
-              fontSize: "18px",
-              color: "#111",
-            }}
-          >
-            Seleção enviada com sucesso. Obrigada por escolher o Afrikanitas
-            _Studio ✨
-          </p>
-        )}
-
-        <button
-          onClick={sendSelection}
-          disabled={loading}
-          style={{
-            marginTop: "30px",
-            padding: "15px 32px",
-            background: loading ? "#555" : "#111",
-            color: "#fff",
-            border: "none",
-            borderRadius: "40px",
-            cursor: loading ? "not-allowed" : "pointer",
-            fontSize: "16px",
-          }}
-        >
-          {loading ? "A enviar..." : "Enviar Seleção"}
-        </button>
+            />
+          </div>
+        ))}
       </div>
+
+      <button
+        onClick={saveSelection}
+        disabled={loading}
+        style={{
+          marginTop: "30px",
+          padding: "14px 24px",
+          background: "black",
+          color: "white",
+          border: "none",
+          borderRadius: "16px",
+          cursor: "pointer",
+        }}
+      >
+        {loading ? "A guardar..." : "Confirmar seleção"}
+      </button>
+
+      {success && (
+        <p style={{ marginTop: "20px", color: "green" }}>
+          Fotografias enviadas com sucesso.
+        </p>
+      )}
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<p>A carregar...</p>}>
+      <GalleryContent />
+    </Suspense>
   );
 }
