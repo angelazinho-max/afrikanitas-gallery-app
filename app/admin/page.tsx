@@ -25,12 +25,30 @@ export default function AdminPage() {
 
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
+  const [isDark, setIsDark] = useState(false);
+
+  const cleanClientName = clientName.trim().toLowerCase().replace(/\s+/g, "-");
+  const s = getStyles(isDark);
 
   useEffect(() => {
     checkSession();
+
+    const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    setIsDark(darkQuery.matches);
+
+    const listener = (e: MediaQueryListEvent) => setIsDark(e.matches);
+    darkQuery.addEventListener("change", listener);
+
+    if ("Notification" in window) {
+      Notification.requestPermission();
+    }
+
+    return () => darkQuery.removeEventListener("change", listener);
   }, []);
 
   useEffect(() => {
+    if (!session) return;
+
     const channel = supabase
       .channel("new-selections")
       .on(
@@ -38,7 +56,14 @@ export default function AdminPage() {
         { event: "INSERT", schema: "public", table: "selections" },
         () => {
           fetchSelections();
-          alert("Nova seleção recebida de uma cliente.");
+
+          if ("Notification" in window && Notification.permission === "granted") {
+            new Notification("Afrikanitas Studio", {
+              body: "Uma cliente acabou de selecionar fotografias.",
+            });
+          } else {
+            alert("Uma cliente acabou de selecionar fotografias.");
+          }
         }
       )
       .subscribe();
@@ -46,7 +71,7 @@ export default function AdminPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [session]);
 
   const checkSession = async () => {
     const { data } = await supabase.auth.getSession();
@@ -94,7 +119,10 @@ export default function AdminPage() {
   const uploadPhotos = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
 
-    if (!files || files.length === 0) {
+    if (!files || files.length === 0) return;
+
+    if (!cleanClientName) {
+      alert("Escreva o nome da cliente antes de carregar as fotografias.");
       return;
     }
 
@@ -102,7 +130,8 @@ export default function AdminPage() {
     setUploadMessage("");
 
     for (const file of Array.from(files)) {
-      const fileName = `${Date.now()}-${file.name}`;
+      const safeName = file.name.replace(/\s+/g, "-").toLowerCase();
+      const fileName = `${cleanClientName}/${Date.now()}-${safeName}`;
 
       const { error } = await supabase.storage
         .from("photos")
@@ -120,9 +149,8 @@ export default function AdminPage() {
 
     setUploading(false);
     setUploadMessage("Fotografias carregadas com sucesso.");
+    event.target.value = "";
   };
-
-  const cleanClientName = clientName.trim().toLowerCase().replace(/\s+/g, "-");
 
   const SITE_URL =
     process.env.NEXT_PUBLIC_SITE_URL ||
@@ -175,7 +203,7 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <main style={loadingPage}>
+      <main style={s.loadingPage}>
         <div style={{ fontSize: "22px" }}>A carregar Afrikanitas Studio...</div>
       </main>
     );
@@ -183,24 +211,22 @@ export default function AdminPage() {
 
   if (!session) {
     return (
-      <main style={loginPage}>
-        <section style={loginCard}>
+      <main style={s.loginPage}>
+        <section style={s.loginCard}>
           <div style={{ textAlign: "center", marginBottom: "18px" }}>
-            <img src="/logo.png" alt="Afrikanitas Studio" style={logo} />
+            <img src="/logo.png" alt="Afrikanitas Studio" style={s.logo} />
           </div>
 
-          <h1 style={loginTitle}>Afrikanitas Studio</h1>
+          <h1 style={s.loginTitle}>Afrikanitas Studio</h1>
 
-          <p style={{ color: "#777", marginBottom: "30px" }}>
-            Área privada do administrador.
-          </p>
+          <p style={s.muted}>Área privada do administrador.</p>
 
           <input
             type="email"
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            style={inputStyle}
+            style={s.inputStyle}
           />
 
           <input
@@ -208,10 +234,10 @@ export default function AdminPage() {
             placeholder="Senha"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={inputStyle}
+            style={s.inputStyle}
           />
 
-          <button onClick={login} style={blackButton}>
+          <button onClick={login} style={s.blackButton}>
             Entrar
           </button>
         </section>
@@ -220,69 +246,88 @@ export default function AdminPage() {
   }
 
   return (
-    <main style={mainPage}>
-      <header style={headerStyle}>
+    <main style={s.mainPage}>
+      <header style={s.headerStyle}>
         <div>
-          <img src="/logo.png" alt="Afrikanitas Studio" style={logoSmall} />
+          <img src="/logo.png" alt="Afrikanitas Studio" style={s.logoSmall} />
 
-          <h1 style={title}>Afrikanitas Studio</h1>
+          <h1 style={s.title}>Afrikanitas Studio</h1>
 
-          <p style={subtitle}>
+          <p style={s.subtitle}>
             Painel premium de clientes, galerias e fotografias escolhidas.
           </p>
         </div>
 
-        <button onClick={logout} style={lightButton}>
+        <button onClick={logout} style={s.lightButton}>
           Sair
         </button>
       </header>
 
-      <section style={statsGrid}>
-        <div style={statCard}>
-          <h3>Total de clientes</h3>
-          <strong>{totalClients}</strong>
+      <section style={s.statsGrid}>
+        <div style={s.statCard}>
+          <h3 style={{ color: s.muted.color }}>Total de clientes</h3>
+          <strong style={{ color: s.title.color, fontSize: "34px" }}>
+            {totalClients}
+          </strong>
         </div>
 
-        <div style={statCard}>
-          <h3>Fotos selecionadas</h3>
-          <strong>{totalPhotos}</strong>
+        <div style={s.statCard}>
+          <h3 style={{ color: s.muted.color }}>Fotos selecionadas</h3>
+          <strong style={{ color: s.title.color, fontSize: "34px" }}>
+            {totalPhotos}
+          </strong>
         </div>
 
-        <div style={statCard}>
-          <h3>Status</h3>
-          <strong>Online</strong>
+        <div style={s.statCard}>
+          <h3 style={{ color: s.muted.color }}>Status</h3>
+          <strong style={{ color: s.title.color, fontSize: "28px" }}>
+            Online
+          </strong>
         </div>
       </section>
 
-      <section style={card}>
-        <h2>Upload de fotografias</h2>
+      <section style={s.card}>
+        <h2 style={{ color: s.title.color }}>Carregar fotografias</h2>
 
-        <p style={{ color: "#666" }}>
-          Carregue aqui as fotografias em bruto ou finais. Elas aparecem
-          automaticamente na galeria da cliente.
+        <p style={s.muted}>
+          Escreva o nome da cliente e carregue as fotografias. Elas serão
+          guardadas na pasta dessa cliente.
         </p>
-
-        <input
-          type="file"
-          multiple
-          accept="image/*"
-          onChange={uploadPhotos}
-          style={inputStyle}
-        />
-
-        {uploading && <p>A enviar fotografias...</p>}
-        {uploadMessage && <p style={{ color: "#2f6f3e" }}>{uploadMessage}</p>}
-      </section>
-
-      <section style={card}>
-        <h2>Gerar link da cliente</h2>
 
         <input
           type="text"
           placeholder="Nome da cliente"
           value={clientName}
           onChange={(e) => setClientName(e.target.value)}
-          style={inputStyle}
+          style={s.inputStyle}
+        />
+
+        <input
+          type="file"
+          multiple
+          accept="image/*"
+          onChange={uploadPhotos}
+          style={s.inputStyle}
+        />
+
+        {uploading && <p style={s.muted}>A enviar fotografias...</p>}
+
+        {uploadMessage && (
+          <p style={{ color: isDark ? "#9ee6a8" : "#2f6f3e" }}>
+            {uploadMessage}
+          </p>
+        )}
+      </section>
+
+      <section style={s.card}>
+        <h2 style={{ color: s.title.color }}>Gerar link da cliente</h2>
+
+        <input
+          type="text"
+          placeholder="Nome da cliente"
+          value={clientName}
+          onChange={(e) => setClientName(e.target.value)}
+          style={s.inputStyle}
         />
 
         <input
@@ -290,78 +335,65 @@ export default function AdminPage() {
           placeholder="WhatsApp da cliente. Ex: 244923000000"
           value={whatsapp}
           onChange={(e) => setWhatsapp(e.target.value)}
-          style={inputStyle}
+          style={s.inputStyle}
         />
 
         {clientLink && (
-          <p style={{ wordBreak: "break-all", marginBottom: "18px" }}>
+          <p style={{ ...s.muted, wordBreak: "break-all" }}>
             <strong>Link:</strong> {clientLink}
           </p>
         )}
 
-        <button onClick={copyLink} style={blackButton}>
+        <button onClick={copyLink} style={s.blackButton}>
           {copied ? "Link copiado" : "Copiar link"}
         </button>
 
         {whatsappLink && (
           <a href={whatsappLink} target="_blank">
-            <button style={whatsappButton}>Enviar WhatsApp elegante</button>
+            <button style={s.whatsappButton}>Enviar WhatsApp elegante</button>
           </a>
         )}
       </section>
 
-      <section style={card}>
-        <h2>Área do fotógrafo</h2>
-
-        <div style={miniGrid}>
-          <div style={miniCard}>Sessões</div>
-          <div style={miniCard}>Clientes</div>
-          <div style={miniCard}>Status</div>
-          <div style={miniCard}>Entregas</div>
-        </div>
-      </section>
-
       <section>
-        <h2 style={{ fontSize: "32px", marginBottom: "18px" }}>
-          Seleções por cliente
-        </h2>
+        <h2 style={s.sectionTitle}>Seleções por cliente</h2>
 
         <input
           type="text"
           placeholder="Filtrar cliente automaticamente..."
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          style={inputStyle}
+          style={s.inputStyle}
         />
 
-        {filteredGroups.length === 0 && <p>Ainda não há seleções.</p>}
+        {filteredGroups.length === 0 && (
+          <p style={s.muted}>Ainda não há seleções.</p>
+        )}
 
-        <div style={{ display: "grid", gap: "28px" }}>
+        <div style={{ display: "grid", gap: "24px" }}>
           {filteredGroups.map(([client, photos]) => (
-            <div key={client} style={card}>
-              <h3 style={{ fontSize: "26px", marginBottom: "10px" }}>
-                {client}
-              </h3>
+            <div key={client} style={s.card}>
+              <h3 style={s.clientTitle}>{client}</h3>
 
-              <p style={{ color: "#555", marginBottom: "18px" }}>
+              <p style={s.muted}>
                 {photos.length} fotografia(s) selecionada(s)
               </p>
 
-              <div style={photoGrid}>
+              <div style={s.photoGrid}>
                 {photos.map((item) => (
-                  <div key={item.id} style={photoCard}>
+                  <div key={item.id} style={s.photoCard}>
                     {item.photo_name && (
                       <img
                         src={item.photo_name}
                         alt={item.photo_name}
-                        style={photoImage}
+                        style={s.photoImage}
                       />
                     )}
 
-                    <p style={photoText}>{item.photo_name}</p>
+                    <p style={s.photoText}>{item.photo_name}</p>
 
                     <a href={item.photo_name} download target="_blank">
-                      <button style={lightButton}>Baixar foto</button>
+                      <button style={s.lightButton}>Baixar foto</button>
                     </a>
                   </div>
                 ))}
@@ -374,176 +406,214 @@ export default function AdminPage() {
   );
 }
 
-const logo = {
-  maxWidth: "160px",
-  height: "auto",
-};
+function getStyles(isDark: boolean) {
+  const bg = isDark ? "#15110d" : "#f8f1e7";
+  const bg2 = isDark ? "#241b14" : "#efe0cb";
+  const cardBg = isDark ? "#241b14" : "#ffffff";
+  const text = isDark ? "#f8f1e7" : "#2b2118";
+  const muted = isDark ? "#d7c6ad" : "#5f5144";
+  const border = isDark ? "#6b5744" : "#d6c5ad";
+  const inputBg = isDark ? "#1c1510" : "#fffaf3";
 
-const logoSmall = {
-  maxWidth: "130px",
-  height: "auto",
-  marginBottom: "14px",
-};
+  return {
+    logo: {
+      maxWidth: "150px",
+      height: "auto",
+    },
 
-const loadingPage = {
-  minHeight: "100vh",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "#f8f1e7",
-  fontFamily: "Georgia, serif",
-};
+    logoSmall: {
+      maxWidth: "120px",
+      height: "auto",
+      marginBottom: "14px",
+    },
 
-const loginPage = {
-  minHeight: "100vh",
-  background: "linear-gradient(135deg, #f8f1e7, #ead8c0)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontFamily: "Georgia, serif",
-  padding: "30px",
-};
+    loadingPage: {
+      minHeight: "100vh",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: bg,
+      color: text,
+      fontFamily: "Georgia, serif",
+    },
 
-const loginCard = {
-  background: "#fff",
-  padding: "40px",
-  borderRadius: "30px",
-  maxWidth: "420px",
-  width: "100%",
-  boxShadow: "0 20px 50px rgba(0,0,0,0.12)",
-};
+    loginPage: {
+      minHeight: "100vh",
+      background: `linear-gradient(135deg, ${bg}, ${bg2})`,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontFamily: "Georgia, serif",
+      padding: "24px",
+      color: text,
+    },
 
-const loginTitle = {
-  fontSize: "34px",
-  marginBottom: "10px",
-  fontWeight: 400,
-};
+    loginCard: {
+      background: cardBg,
+      padding: "32px",
+      borderRadius: "28px",
+      maxWidth: "420px",
+      width: "100%",
+      boxShadow: "0 20px 50px rgba(0,0,0,0.14)",
+      color: text,
+    },
 
-const mainPage = {
-  minHeight: "100vh",
-  padding: "40px",
-  fontFamily: "Georgia, serif",
-  background: "linear-gradient(135deg, #f8f1e7, #efe0cb)",
-};
+    loginTitle: {
+      fontSize: "32px",
+      marginBottom: "10px",
+      fontWeight: 400,
+      color: text,
+    },
 
-const headerStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  marginBottom: "35px",
-};
+    mainPage: {
+      minHeight: "100vh",
+      padding: "24px",
+      fontFamily: "Georgia, serif",
+      background: `linear-gradient(135deg, ${bg}, ${bg2})`,
+      color: text,
+      overflowX: "hidden" as const,
+    },
 
-const title = {
-  fontSize: "46px",
-  marginBottom: "10px",
-  fontWeight: 400,
-};
+    headerStyle: {
+      display: "flex",
+      flexDirection: "column" as const,
+      alignItems: "flex-start",
+      gap: "18px",
+      marginBottom: "28px",
+      color: text,
+    },
 
-const subtitle = {
-  fontSize: "18px",
-  color: "#555",
-};
+    title: {
+      fontSize: "34px",
+      marginBottom: "8px",
+      fontWeight: 400,
+      color: text,
+    },
 
-const statsGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: "20px",
-  marginBottom: "35px",
-};
+    subtitle: {
+      fontSize: "16px",
+      color: muted,
+      lineHeight: 1.5,
+    },
 
-const miniGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: "18px",
-};
+    sectionTitle: {
+      fontSize: "30px",
+      marginBottom: "18px",
+      color: text,
+      fontWeight: 400,
+    },
 
-const photoGrid = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: "18px",
-};
+    clientTitle: {
+      fontSize: "25px",
+      marginBottom: "10px",
+      color: text,
+      fontWeight: 400,
+    },
 
-const inputStyle = {
-  width: "100%",
-  maxWidth: "480px",
-  padding: "15px",
-  borderRadius: "16px",
-  border: "1px solid #d6c5ad",
-  fontSize: "16px",
-  display: "block",
-  marginBottom: "14px",
-};
+    muted: {
+      color: muted,
+      marginBottom: "18px",
+      lineHeight: 1.6,
+    },
 
-const blackButton = {
-  padding: "14px 24px",
-  background: "#111",
-  color: "#fff",
-  border: "none",
-  borderRadius: "30px",
-  cursor: "pointer",
-  fontSize: "16px",
-  marginRight: "10px",
-  marginBottom: "10px",
-};
+    statsGrid: {
+      display: "grid",
+      gridTemplateColumns: "1fr",
+      gap: "18px",
+      marginBottom: "30px",
+    },
 
-const whatsappButton = {
-  padding: "14px 24px",
-  background: "#25D366",
-  color: "#fff",
-  border: "none",
-  borderRadius: "30px",
-  cursor: "pointer",
-  fontSize: "16px",
-};
+    photoGrid: {
+      display: "grid",
+      gridTemplateColumns: "1fr",
+      gap: "18px",
+    },
 
-const lightButton = {
-  padding: "12px 20px",
-  background: "#fff",
-  color: "#111",
-  border: "1px solid #d6c5ad",
-  borderRadius: "30px",
-  cursor: "pointer",
-  fontSize: "15px",
-};
+    inputStyle: {
+      width: "100%",
+      boxSizing: "border-box" as const,
+      padding: "15px",
+      borderRadius: "18px",
+      border: `1px solid ${border}`,
+      fontSize: "16px",
+      display: "block",
+      marginBottom: "14px",
+      background: inputBg,
+      color: text,
+      outline: "none",
+    },
 
-const card = {
-  background: "rgba(255,255,255,0.9)",
-  padding: "28px",
-  borderRadius: "28px",
-  marginBottom: "35px",
-  boxShadow: "0 16px 40px rgba(0,0,0,0.08)",
-};
+    blackButton: {
+      padding: "14px 24px",
+      background: isDark ? "#f8f1e7" : "#111",
+      color: isDark ? "#111" : "#fff",
+      border: "none",
+      borderRadius: "30px",
+      cursor: "pointer",
+      fontSize: "16px",
+      marginRight: "10px",
+      marginBottom: "10px",
+    },
 
-const statCard = {
-  background: "#fff",
-  padding: "24px",
-  borderRadius: "24px",
-  boxShadow: "0 12px 35px rgba(0,0,0,0.08)",
-};
+    whatsappButton: {
+      padding: "14px 24px",
+      background: "#25D366",
+      color: "#fff",
+      border: "none",
+      borderRadius: "30px",
+      cursor: "pointer",
+      fontSize: "16px",
+      marginBottom: "10px",
+    },
 
-const miniCard = {
-  background: "#f8f1e7",
-  padding: "22px",
-  borderRadius: "20px",
-  fontWeight: "bold",
-};
+    lightButton: {
+      padding: "12px 20px",
+      background: inputBg,
+      color: text,
+      border: `1px solid ${border}`,
+      borderRadius: "30px",
+      cursor: "pointer",
+      fontSize: "15px",
+    },
 
-const photoCard = {
-  background: "#fffaf3",
-  padding: "14px",
-  borderRadius: "22px",
-};
+    card: {
+      background: cardBg,
+      padding: "24px",
+      borderRadius: "28px",
+      marginBottom: "28px",
+      boxShadow: "0 14px 35px rgba(0,0,0,0.10)",
+      color: text,
+    },
 
-const photoImage = {
-  width: "100%",
-  height: "220px",
-  objectFit: "cover" as const,
-  borderRadius: "18px",
-  marginBottom: "10px",
-};
+    statCard: {
+      background: cardBg,
+      padding: "24px",
+      borderRadius: "24px",
+      boxShadow: "0 12px 30px rgba(0,0,0,0.10)",
+      color: text,
+    },
 
-const photoText = {
-  fontSize: "13px",
-  wordBreak: "break-all" as const,
-  color: "#444",
-};
+    photoCard: {
+      background: isDark ? "#1c1510" : "#fffaf3",
+      padding: "14px",
+      borderRadius: "22px",
+      color: text,
+    },
+
+    photoImage: {
+      width: "100%",
+      height: "auto",
+      maxHeight: "430px",
+      objectFit: "contain" as const,
+      borderRadius: "18px",
+      marginBottom: "10px",
+      background: "#111",
+    },
+
+    photoText: {
+      fontSize: "13px",
+      wordBreak: "break-all" as const,
+      color: muted,
+    },
+  };
+}
