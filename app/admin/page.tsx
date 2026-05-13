@@ -37,7 +37,8 @@ export default function AdminPage() {
   const cleanClientName = clientName.trim().toLowerCase().replace(/\s+/g, "-");
 
 const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL || "https://galeria.afrikanitasstudio.com";
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  "https://afrikanitas-gallery-app.vercel.app";
 
 const clientLink = cleanClientName
   ? `${SITE_URL}/?cliente=${cleanClientName}`
