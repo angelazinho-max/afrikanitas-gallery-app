@@ -38,7 +38,7 @@ export default function AdminPage() {
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ||
-  "https://afrikanitas-gallery-app.vercel.app";
+  "https://galeria.afrikanitasstudio.com";
 
 const clientLink = cleanClientName
   ? `${SITE_URL}/?cliente=${cleanClientName}`
