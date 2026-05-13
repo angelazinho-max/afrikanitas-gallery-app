@@ -72,21 +72,34 @@ export default function AdminPage() {
       setLogged(true);
     } else {
       alert("Senha incorreta.");
-    }
-  };
+   {clientName && (
+  <div>
+    <p>
+      Link:{" "}
+      <strong>
+        {`${window.location.origin}/?cliente=${clientName.toLowerCase()}`}
+      </strong>
+    </p>
 
-  const copyLink = async () => {
-    if (!clientLink) {
-      alert("Escreva o nome da cliente primeiro.");
-      return;
-    }
-
-    await navigator.clipboard.writeText(clientLink);
-    setCopied(true);
-
-    setTimeout(() => setCopied(false), 2000);
-  };
-
+    <button
+      onClick={() =>
+        navigator.clipboard.writeText(
+          `${window.location.origin}/?cliente=${clientName.toLowerCase()}`
+        )
+      }
+      style={{
+        padding: "10px 18px",
+        background: "#111",
+        color: "#fff",
+        border: "none",
+        borderRadius: "20px",
+        cursor: "pointer",
+      }}
+    >
+      Copiar link
+    </button>
+  </div>
+)}
   if (!logged) {
     return (
       <main
