@@ -14,15 +14,38 @@ export default function AdminPage() {
   const [session, setSession] = useState<any>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [clientName, setClientName] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [copied, setCopied] = useState(false);
+
   const [selections, setSelections] = useState<Selection[]>([]);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const [uploading, setUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState("");
 
   useEffect(() => {
     checkSession();
+  }, []);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("new-selections")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "selections" },
+        () => {
+          fetchSelections();
+          alert("Nova seleção recebida de uma cliente.");
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const checkSession = async () => {
@@ -68,6 +91,37 @@ export default function AdminPage() {
     setSelections((data || []) as Selection[]);
   };
 
+  const uploadPhotos = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    setUploading(true);
+    setUploadMessage("");
+
+    for (const file of Array.from(files)) {
+      const fileName = `${Date.now()}-${file.name}`;
+
+      const { error } = await supabase.storage
+        .from("photos")
+        .upload(fileName, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (error) {
+        setUploading(false);
+        alert("Erro ao fazer upload: " + error.message);
+        return;
+      }
+    }
+
+    setUploading(false);
+    setUploadMessage("Fotografias carregadas com sucesso.");
+  };
+
   const cleanClientName = clientName.trim().toLowerCase().replace(/\s+/g, "-");
 
   const SITE_URL =
@@ -95,7 +149,6 @@ export default function AdminPage() {
 
     await navigator.clipboard.writeText(clientLink);
     setCopied(true);
-
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -132,9 +185,11 @@ export default function AdminPage() {
     return (
       <main style={loginPage}>
         <section style={loginCard}>
-          <h1 style={{ fontSize: "34px", marginBottom: "10px" }}>
-            Afrikanitas Studio
-          </h1>
+          <div style={{ textAlign: "center", marginBottom: "18px" }}>
+            <img src="/logo.png" alt="Afrikanitas Studio" style={logo} />
+          </div>
+
+          <h1 style={loginTitle}>Afrikanitas Studio</h1>
 
           <p style={{ color: "#777", marginBottom: "30px" }}>
             Área privada do administrador.
@@ -168,11 +223,11 @@ export default function AdminPage() {
     <main style={mainPage}>
       <header style={headerStyle}>
         <div>
-          <h1 style={{ fontSize: "46px", marginBottom: "10px" }}>
-            Afrikanitas Studio
-          </h1>
+          <img src="/logo.png" alt="Afrikanitas Studio" style={logoSmall} />
 
-          <p style={{ fontSize: "18px", color: "#555" }}>
+          <h1 style={title}>Afrikanitas Studio</h1>
+
+          <p style={subtitle}>
             Painel premium de clientes, galerias e fotografias escolhidas.
           </p>
         </div>
@@ -197,6 +252,26 @@ export default function AdminPage() {
           <h3>Status</h3>
           <strong>Online</strong>
         </div>
+      </section>
+
+      <section style={card}>
+        <h2>Upload de fotografias</h2>
+
+        <p style={{ color: "#666" }}>
+          Carregue aqui as fotografias em bruto ou finais. Elas aparecem
+          automaticamente na galeria da cliente.
+        </p>
+
+        <input
+          type="file"
+          multiple
+          accept="image/*"
+          onChange={uploadPhotos}
+          style={inputStyle}
+        />
+
+        {uploading && <p>A enviar fotografias...</p>}
+        {uploadMessage && <p style={{ color: "#2f6f3e" }}>{uploadMessage}</p>}
       </section>
 
       <section style={card}>
@@ -299,13 +374,24 @@ export default function AdminPage() {
   );
 }
 
+const logo = {
+  maxWidth: "160px",
+  height: "auto",
+};
+
+const logoSmall = {
+  maxWidth: "130px",
+  height: "auto",
+  marginBottom: "14px",
+};
+
 const loadingPage = {
   minHeight: "100vh",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   background: "#f8f1e7",
-  fontFamily: "Arial",
+  fontFamily: "Georgia, serif",
 };
 
 const loginPage = {
@@ -314,7 +400,7 @@ const loginPage = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  fontFamily: "Arial",
+  fontFamily: "Georgia, serif",
   padding: "30px",
 };
 
@@ -327,10 +413,16 @@ const loginCard = {
   boxShadow: "0 20px 50px rgba(0,0,0,0.12)",
 };
 
+const loginTitle = {
+  fontSize: "34px",
+  marginBottom: "10px",
+  fontWeight: 400,
+};
+
 const mainPage = {
   minHeight: "100vh",
   padding: "40px",
-  fontFamily: "Arial",
+  fontFamily: "Georgia, serif",
   background: "linear-gradient(135deg, #f8f1e7, #efe0cb)",
 };
 
@@ -339,6 +431,17 @@ const headerStyle = {
   justifyContent: "space-between",
   alignItems: "center",
   marginBottom: "35px",
+};
+
+const title = {
+  fontSize: "46px",
+  marginBottom: "10px",
+  fontWeight: 400,
+};
+
+const subtitle = {
+  fontSize: "18px",
+  color: "#555",
 };
 
 const statsGrid = {

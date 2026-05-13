@@ -3,60 +3,63 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./lib/supabase";
 
+type Photo = {
+  name: string;
+  url: string;
+};
+
 export default function Home() {
   const [cliente, setCliente] = useState("Cliente sem nome");
+  const [photos, setPhotos] = useState<Photo[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-const [isAuthenticated, setIsAuthenticated] = useState(false);
-const [email, setEmail] = useState("");
-const [password, setPassword] = useState("");
+  const [loadingPhotos, setLoadingPhotos] = useState(true);
 
-const ADMIN_EMAIL = "admin@afrikanitasstudio.com";
-const ADMIN_PASSWORD = "Afrikanitas2026";
-
-useEffect(() => {
-  const auth = localStorage.getItem("afrikanitas_admin");
-
-  if (auth === "true") {
-    setIsAuthenticated(true);
-  }
-}, []);
-
-const handleLogin = () => {
-  if (
-    email === ADMIN_EMAIL &&
-    password === ADMIN_PASSWORD
-  ) {
-    localStorage.setItem("afrikanitas_admin", "true");
-    setIsAuthenticated(true);
-  } else {
-    alert("Credenciais inválidas");
-  }
-};
-
-const handleLogout = () => {
-  localStorage.removeItem("afrikanitas_admin");
-  setIsAuthenticated(false);
-};
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setCliente(params.get("cliente") || "Cliente sem nome");
+    fetchPhotos();
   }, []);
 
-  const photos = [
-    "/6A9A8879.jpg",
-    "/6A9A8806.jpg",
-    "/6A9A8829.jpg",
-    "/6A9A8832.jpg",
-  ];
+  const fetchPhotos = async () => {
+    setLoadingPhotos(true);
+
+    const { data, error } = await supabase.storage
+      .from("photos")
+      .list("", {
+        limit: 100,
+        sortBy: { column: "created_at", order: "desc" },
+      });
+
+    if (error) {
+      console.log(error);
+      setLoadingPhotos(false);
+      return;
+    }
+
+    const photoList =
+      data
+        ?.filter((file) => file.name !== ".emptyFolderPlaceholder")
+        .map((file) => {
+          const { data: publicUrl } = supabase.storage
+            .from("photos")
+            .getPublicUrl(file.name);
+
+          return {
+            name: file.name,
+            url: publicUrl.publicUrl,
+          };
+        }) || [];
+
+    setPhotos(photoList);
+    setLoadingPhotos(false);
+  };
 
   const togglePhoto = (photo: string) => {
     setSuccess(false);
     setSelected((prev) =>
-      prev.includes(photo)
-        ? prev.filter((p) => p !== photo)
-        : [...prev, photo]
+      prev.includes(photo) ? prev.filter((p) => p !== photo) : [...prev, photo]
     );
   };
 
@@ -86,109 +89,180 @@ const handleLogout = () => {
   };
 
   return (
-    <main
-      style={{
-        padding: "40px",
-        fontFamily: "Arial",
-        background: "#f8f5ef",
-        minHeight: "100vh",
-      }}
-    >
-      <h1 style={{ fontSize: "52px", marginBottom: "20px" }}>
-        Afrikanitas Studio
-      </h1>
+    <main style={page}>
+      <section style={hero}>
+        <div style={logoBox}>
+          <img src="/logo.png" alt="Afrikanitas Studio" style={logo} />
+        </div>
 
-      <p style={{ fontSize: "18px" }}>
-        Cliente: <strong>{cliente}</strong>
-      </p>
+        <p style={smallTitle}>Galeria privada</p>
 
-      <p style={{ fontSize: "18px" }}>
-        Escolha as suas fotografias favoritas.
-      </p>
+        <h1 style={title}>Afrikanitas Studio</h1>
 
-      <p style={{ fontSize: "16px", color: "#555" }}>
-        {selected.length} fotografia(s) selecionada(s)
-      </p>
+        <p style={intro}>
+          Bem-vinda à sua galeria privada Afrikanitas Studio. Cada fotografia
+          foi criada para guardar com elegância a beleza deste momento. Escolha
+          com calma as suas imagens favoritas; a nossa equipa irá preparar a
+          seleção final com todo cuidado.
+        </p>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-          gap: "22px",
-          marginTop: "35px",
-        }}
-      >
-        {photos.map((photo) => (
-          <div
-            key={photo}
-            style={{
-              position: "relative",
-              borderRadius: "18px",
-              overflow: "hidden",
-              background: "#eee",
-            }}
-          >
-            <img
-              src={photo}
-              alt="Fotografia"
-              onClick={() => togglePhoto(photo)}
+        <p style={clientText}>
+          Cliente: <strong>{cliente}</strong>
+        </p>
+
+        <p style={counter}>{selected.length} fotografia(s) selecionada(s)</p>
+      </section>
+
+      {loadingPhotos ? (
+        <p style={loadingText}>A carregar fotografias...</p>
+      ) : (
+        <section style={grid}>
+          {photos.map((photo) => (
+            <div
+              key={photo.url}
+              onClick={() => togglePhoto(photo.url)}
               style={{
-                width: "100%",
-                height: "300px",
-                objectFit: "cover",
-                borderRadius: "18px",
-                cursor: "pointer",
-                display: "block",
+                ...photoCard,
+                border: selected.includes(photo.url)
+                  ? "3px solid #111"
+                  : "1px solid rgba(0,0,0,0.08)",
               }}
-            />
+            >
+              <img src={photo.url} alt={photo.name} style={photoImage} />
 
-            {selected.includes(photo) && (
-              <div
-                style={{
-                  position: "absolute",
-                  bottom: "12px",
-                  right: "12px",
-                  width: "30px",
-                  height: "30px",
-                  borderRadius: "50%",
-                  background: "rgba(0,0,0,0.75)",
-                  color: "#fff",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "15px",
-                }}
-              >
-                ♥
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+              {selected.includes(photo.url) && (
+                <div style={selectedBadge}>Selecionada</div>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
 
       {success && (
-        <p style={{ marginTop: "25px", fontSize: "18px" }}>
+        <p style={successText}>
           Seleção enviada com sucesso. Obrigada por escolher o Afrikanitas
           Studio ✨
         </p>
       )}
 
-      <button
-        onClick={sendSelection}
-        disabled={loading}
-        style={{
-          marginTop: "30px",
-          padding: "15px 32px",
-          background: loading ? "#555" : "#111",
-          color: "#fff",
-          border: "none",
-          borderRadius: "40px",
-          cursor: loading ? "not-allowed" : "pointer",
-          fontSize: "16px",
-        }}
-      >
+      <button onClick={sendSelection} disabled={loading} style={button}>
         {loading ? "A enviar..." : "Enviar Seleção"}
       </button>
     </main>
   );
 }
+
+const page = {
+  minHeight: "100vh",
+  padding: "38px",
+  fontFamily: "Georgia, 'Times New Roman', serif",
+  background: "linear-gradient(135deg, #f8f1e7, #ead8c0)",
+};
+
+const hero = {
+  maxWidth: "860px",
+  margin: "0 auto 38px",
+  textAlign: "center" as const,
+};
+
+const logoBox = {
+  marginBottom: "18px",
+};
+
+const logo = {
+  maxWidth: "170px",
+  height: "auto",
+};
+
+const smallTitle = {
+  textTransform: "uppercase" as const,
+  letterSpacing: "4px",
+  fontSize: "12px",
+  color: "#8b7355",
+  marginBottom: "12px",
+};
+
+const title = {
+  fontSize: "52px",
+  marginBottom: "18px",
+  fontWeight: 400,
+  color: "#1c1c1c",
+};
+
+const intro = {
+  fontSize: "18px",
+  lineHeight: 1.7,
+  color: "#5c5147",
+  marginBottom: "22px",
+};
+
+const clientText = {
+  fontSize: "18px",
+  color: "#222",
+};
+
+const counter = {
+  fontSize: "15px",
+  color: "#6b5d4f",
+};
+
+const loadingText = {
+  textAlign: "center" as const,
+  fontSize: "18px",
+};
+
+const grid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+  gap: "22px",
+  maxWidth: "1180px",
+  margin: "0 auto",
+};
+
+const photoCard = {
+  position: "relative" as const,
+  borderRadius: "24px",
+  overflow: "hidden",
+  background: "#fff",
+  padding: "10px",
+  boxShadow: "0 16px 38px rgba(0,0,0,0.08)",
+  cursor: "pointer",
+};
+
+const photoImage = {
+  width: "100%",
+  height: "230px",
+  objectFit: "cover" as const,
+  borderRadius: "18px",
+  display: "block",
+};
+
+const selectedBadge = {
+  position: "absolute" as const,
+  bottom: "18px",
+  right: "18px",
+  background: "#111",
+  color: "#fff",
+  padding: "8px 14px",
+  borderRadius: "30px",
+  fontSize: "13px",
+};
+
+const successText = {
+  marginTop: "28px",
+  textAlign: "center" as const,
+  fontSize: "18px",
+  color: "#2f5f3a",
+};
+
+const button = {
+  display: "block",
+  margin: "32px auto 0",
+  padding: "15px 36px",
+  background: "#111",
+  color: "#fff",
+  border: "none",
+  borderRadius: "40px",
+  cursor: "pointer",
+  fontSize: "16px",
+};
