@@ -63,10 +63,42 @@ export default function AdminPage() {
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (error) {
-      console.log(error);
-      return;
-    }
+    if (!isAuthenticated) {
+  return (
+    <main className="min-h-screen bg-[#f6f1eb] flex items-center justify-center p-6">
+      <div className="bg-white rounded-3xl shadow-xl p-10 w-full max-w-md">
+        <h1 className="text-3xl font-bold mb-6 text-center">
+          Afrikanitas Studio
+        </h1>
+
+        <input
+          type="email"
+          placeholder="Email"
+          className="w-full border p-3 rounded-xl mb-4"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+
+        <input
+          type="password"
+          placeholder="Senha"
+          className="w-full border p-3 rounded-xl mb-6"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+
+        <button
+          onClick={handleLogin}
+          className="w-full bg-black text-white py-3 rounded-xl"
+        >
+          Entrar
+        </button>
+      </div>
+    </main>
+  );
+}
+
+return (
 
     setSelections((data || []) as Selection[]);
   };

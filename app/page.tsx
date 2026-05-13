@@ -8,7 +8,37 @@ export default function Home() {
   const [selected, setSelected] = useState<string[]>([]);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+const [isAuthenticated, setIsAuthenticated] = useState(false);
+const [email, setEmail] = useState("");
+const [password, setPassword] = useState("");
 
+const ADMIN_EMAIL = "admin@afrikanitasstudio.com";
+const ADMIN_PASSWORD = "Afrikanitas2026";
+
+useEffect(() => {
+  const auth = localStorage.getItem("afrikanitas_admin");
+
+  if (auth === "true") {
+    setIsAuthenticated(true);
+  }
+}, []);
+
+const handleLogin = () => {
+  if (
+    email === ADMIN_EMAIL &&
+    password === ADMIN_PASSWORD
+  ) {
+    localStorage.setItem("afrikanitas_admin", "true");
+    setIsAuthenticated(true);
+  } else {
+    alert("Credenciais inválidas");
+  }
+};
+
+const handleLogout = () => {
+  localStorage.removeItem("afrikanitas_admin");
+  setIsAuthenticated(false);
+};
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setCliente(params.get("cliente") || "Cliente sem nome");
