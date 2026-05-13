@@ -36,11 +36,12 @@ export default function AdminPage() {
 
   const cleanClientName = clientName.trim().toLowerCase().replace(/\s+/g, "-");
 
-  const clientLink =
-    typeof window !== "undefined" && cleanClientName
-      ? `${window.location.origin}/?cliente=${cleanClientName}`
-      : "";
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL || "https://galeria.afrikanitasstudio.com";
 
+const clientLink = cleanClientName
+  ? `${SITE_URL}/?cliente=${cleanClientName}`
+  : "";
   const whatsappText = encodeURIComponent(
     `Olá ${clientName}, segue o link para escolher as suas fotografias favoritas do Afrikanitas Studio:\n\n${clientLink}`
   );
