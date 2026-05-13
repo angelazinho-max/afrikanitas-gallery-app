@@ -99,7 +99,6 @@ export default function Home() {
   return (
     <main style={page}>
       <section style={hero}>
-        <img src="/logo.png" alt="Afrikanitas Studio" style={logo} />
 
         <p style={smallTitle}>Galeria privada</p>
 
@@ -177,12 +176,6 @@ const hero = {
   maxWidth: "860px",
   margin: "0 auto 38px",
   textAlign: "center" as const,
-};
-
-const logo = {
-  maxWidth: "160px",
-  height: "auto",
-  marginBottom: "18px",
 };
 
 const smallTitle = {
