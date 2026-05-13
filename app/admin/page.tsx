@@ -10,25 +10,15 @@ type Selection = {
   created_at: string;
 };
 
-const ADMIN_PASSWORD = "Afrikanitas2026";
-
 export default function AdminPage() {
-  const [password, setPassword] = useState("");
-  const [logged, setLogged] = useState(false);
   const [clientName, setClientName] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [copied, setCopied] = useState(false);
   const [selections, setSelections] = useState<Selection[]>([]);
 
   useEffect(() => {
-    if (localStorage.getItem("afrikanitas_admin") === "true") {
-      setLogged(true);
-    }
+    fetchSelections();
   }, []);
-
-  useEffect(() => {
-    if (logged) fetchSelections();
-  }, [logged]);
 
   const fetchSelections = async () => {
     const { data, error } = await supabase
@@ -36,7 +26,12 @@ export default function AdminPage() {
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (!error && data) setSelections(data as Selection[]);
+    if (error) {
+      console.log(error);
+      return;
+    }
+
+    setSelections((data || []) as Selection[]);
   };
 
   const cleanClientName = clientName.trim().toLowerCase().replace(/\s+/g, "-");
@@ -46,173 +41,72 @@ export default function AdminPage() {
       ? `${window.location.origin}/?cliente=${cleanClientName}`
       : "";
 
-  const whatsappMessage = encodeURIComponent(
-    `Olá ${clientName}, aqui está o link para escolher as suas fotografias favoritas do Afrikanitas Studio:\n\n${clientLink}`
+  const whatsappText = encodeURIComponent(
+    `Olá ${clientName}, segue o link para escolher as suas fotografias favoritas do Afrikanitas Studio:\n\n${clientLink}`
   );
 
-  const whatsappLink = whatsapp
-    ? `https://wa.me/${whatsapp.replace(/\D/g, "")}?text=${whatsappMessage}`
-    : "";
+  const whatsappLink =
+    whatsapp.trim() && clientLink
+      ? `https://wa.me/${whatsapp.replace(/\D/g, "")}?text=${whatsappText}`
+      : "";
+
+  const copyLink = async () => {
+    if (!clientLink) {
+      alert("Escreva o nome da cliente primeiro.");
+      return;
+    }
+
+    await navigator.clipboard.writeText(clientLink);
+    setCopied(true);
+
+    setTimeout(() => {
+      setCopied(false);
+    }, 2000);
+  };
 
   const groupedSelections = useMemo(() => {
     const groups: Record<string, Selection[]> = {};
 
     selections.forEach((item) => {
       const name = item.client_name || "Cliente sem nome";
-      if (!groups[name]) groups[name] = [];
+
+      if (!groups[name]) {
+        groups[name] = [];
+      }
+
       groups[name].push(item);
     });
 
     return groups;
   }, [selections]);
 
-  const handleLogin = () => {
-    if (password === ADMIN_PASSWORD) {
-      localStorage.setItem("afrikanitas_admin", "true");
-      setLogged(true);
-    } else {
-      alert("Senha incorreta.");
-   {clientName && (
-  <div>
-    <p>
-      Link:{" "}
-      <strong>
-        {`${window.location.origin}/?cliente=${clientName.toLowerCase()}`}
-      </strong>
-    </p>
-
-    <button
-      onClick={() =>
-        navigator.clipboard.writeText(
-          `${window.location.origin}/?cliente=${clientName.toLowerCase()}`
-        )
-      }
-      style={{
-        padding: "10px 18px",
-        background: "#111",
-        color: "#fff",
-        border: "none",
-        borderRadius: "20px",
-        cursor: "pointer",
-      }}
-    >
-      Copiar link
-    </button>
-  </div>
-)}
-  if (!logged) {
-    return (
-      <main
-        style={{
-          minHeight: "100vh",
-          background: "#0f0f0f",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontFamily: "Arial",
-          padding: "30px",
-        }}
-      >
-        <div
-          style={{
-            background: "#f8f5ef",
-            padding: "40px",
-            borderRadius: "28px",
-            width: "100%",
-            maxWidth: "420px",
-            boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
-          }}
-        >
-          <h1 style={{ marginBottom: "10px", fontSize: "34px" }}>
-            Afrikanitas Studio
-          </h1>
-
-          <p style={{ marginBottom: "25px", color: "#555" }}>
-            Acesso privado ao painel administrativo.
-          </p>
-
-          <input
-            type="password"
-            placeholder="Senha de administrador"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "16px",
-              borderRadius: "16px",
-              border: "1px solid #ccc",
-              marginBottom: "18px",
-              fontSize: "16px",
-            }}
-          />
-
-          <button
-            onClick={handleLogin}
-            style={{
-              width: "100%",
-              padding: "16px",
-              borderRadius: "30px",
-              border: "none",
-              background: "#111",
-              color: "#fff",
-              fontSize: "16px",
-              cursor: "pointer",
-            }}
-          >
-            Entrar
-          </button>
-        </div>
-      </main>
-    );
-  }
-
   return (
     <main
       style={{
         minHeight: "100vh",
-        background: "#f8f5ef",
         padding: "40px",
         fontFamily: "Arial",
+        background: "#f8f5ef",
       }}
     >
-      <header style={{ marginBottom: "35px" }}>
-        <h1 style={{ fontSize: "48px", marginBottom: "8px" }}>
-          Admin Afrikanitas Studio
-        </h1>
+      <h1 style={{ fontSize: "46px", marginBottom: "10px" }}>
+        Admin Afrikanitas Studio
+      </h1>
 
-        <p style={{ color: "#555", fontSize: "18px" }}>
-          Gerir links, clientes e fotografias selecionadas.
-        </p>
-
-        <button
-          onClick={() => {
-            localStorage.removeItem("afrikanitas_admin");
-            setLogged(false);
-          }}
-          style={{
-            marginTop: "15px",
-            padding: "10px 20px",
-            borderRadius: "20px",
-            border: "none",
-            background: "#111",
-            color: "#fff",
-            cursor: "pointer",
-          }}
-        >
-          Sair
-        </button>
-      </header>
+      <p style={{ fontSize: "18px", marginBottom: "35px", color: "#555" }}>
+        Gerir links, clientes e fotografias escolhidas.
+      </p>
 
       <section
         style={{
           background: "#fff",
           padding: "28px",
           borderRadius: "26px",
-          marginBottom: "35px",
+          marginBottom: "40px",
           boxShadow: "0 12px 35px rgba(0,0,0,0.08)",
         }}
       >
-        <h2 style={{ marginBottom: "20px" }}>Gerador de link da cliente</h2>
+        <h2 style={{ marginBottom: "18px" }}>Gerar link da cliente</h2>
 
         <input
           type="text"
@@ -221,13 +115,13 @@ export default function AdminPage() {
           onChange={(e) => setClientName(e.target.value)}
           style={{
             width: "100%",
-            maxWidth: "460px",
+            maxWidth: "450px",
             padding: "15px",
             borderRadius: "16px",
             border: "1px solid #ccc",
             fontSize: "16px",
-            marginBottom: "15px",
             display: "block",
+            marginBottom: "14px",
           }}
         />
 
@@ -238,18 +132,18 @@ export default function AdminPage() {
           onChange={(e) => setWhatsapp(e.target.value)}
           style={{
             width: "100%",
-            maxWidth: "460px",
+            maxWidth: "450px",
             padding: "15px",
             borderRadius: "16px",
             border: "1px solid #ccc",
             fontSize: "16px",
-            marginBottom: "15px",
             display: "block",
+            marginBottom: "18px",
           }}
         />
 
         {clientLink && (
-          <p style={{ wordBreak: "break-all", marginBottom: "15px" }}>
+          <p style={{ wordBreak: "break-all", marginBottom: "18px" }}>
             <strong>Link:</strong> {clientLink}
           </p>
         )}
@@ -258,11 +152,12 @@ export default function AdminPage() {
           onClick={copyLink}
           style={{
             padding: "14px 24px",
-            borderRadius: "30px",
-            border: "none",
             background: "#111",
             color: "#fff",
+            border: "none",
+            borderRadius: "30px",
             cursor: "pointer",
+            fontSize: "16px",
             marginRight: "10px",
           }}
         >
@@ -274,11 +169,12 @@ export default function AdminPage() {
             <button
               style={{
                 padding: "14px 24px",
-                borderRadius: "30px",
-                border: "none",
                 background: "#25D366",
                 color: "#fff",
+                border: "none",
+                borderRadius: "30px",
                 cursor: "pointer",
+                fontSize: "16px",
               }}
             >
               Enviar no WhatsApp
