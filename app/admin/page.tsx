@@ -1,3 +1,5 @@
+Novo código: 
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -11,14 +13,49 @@ type Selection = {
 };
 
 export default function AdminPage() {
+  const [session, setSession] = useState<any>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
   const [clientName, setClientName] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [copied, setCopied] = useState(false);
   const [selections, setSelections] = useState<Selection[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("");
 
   useEffect(() => {
-    fetchSelections();
+    checkSession();
   }, []);
+
+  const checkSession = async () => {
+    const { data } = await supabase.auth.getSession();
+    setSession(data.session);
+    setLoading(false);
+
+    if (data.session) {
+      fetchSelections();
+    }
+  };
+
+  const login = async () => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      alert("Email ou senha incorretos.");
+      return;
+    }
+
+    checkSession();
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+  };
 
   const fetchSelections = async () => {
     const { data, error } = await supabase
@@ -36,15 +73,16 @@ export default function AdminPage() {
 
   const cleanClientName = clientName.trim().toLowerCase().replace(/\s+/g, "-");
 
-const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL ||
-  "https://galeria.afrikanitasstudio.com";
+  const SITE_URL =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    "https://galeria.afrikanitasstudio.com";
 
-const clientLink = cleanClientName
-  ? `${SITE_URL}/?cliente=${cleanClientName}`
-  : "";
+  const clientLink = cleanClientName
+    ? `${SITE_URL}/?cliente=${cleanClientName}`
+    : "";
+
   const whatsappText = encodeURIComponent(
-    `Olá ${clientName}, segue o link para escolher as suas fotografias favoritas do Afrikanitas Studio:\n\n${clientLink}`
+    `Olá ${clientName}, tudo bem? ✨\n\nA sua galeria Afrikanitas Studio já está pronta.\n\nClique no link abaixo para escolher as suas fotografias favoritas:\n\n${clientLink}\n\nCom carinho,\nAfrikanitas Studio`
   );
 
   const whatsappLink =
@@ -82,49 +120,152 @@ const clientLink = cleanClientName
     return groups;
   }, [selections]);
 
+  const filteredGroups = useMemo(() => {
+    return Object.entries(groupedSelections).filter(([client]) =>
+      client.toLowerCase().includes(filter.toLowerCase())
+    );
+  }, [groupedSelections, filter]);
+
+  const totalClients = Object.keys(groupedSelections).length;
+  const totalPhotos = selections.length;
+
+  if (loading) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#f8f1e7",
+          fontFamily: "Arial",
+        }}
+      >
+        <div style={{ fontSize: "22px" }}>A carregar Afrikanitas Studio...</div>
+      </main>
+    );
+  }
+
+  if (!session) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          background: "linear-gradient(135deg, #f8f1e7, #ead8c0)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: "Arial",
+          padding: "30px",
+        }}
+      >
+        <section
+          style={{
+            background: "#fff",
+            padding: "40px",
+            borderRadius: "30px",
+            maxWidth: "420px",
+            width: "100%",
+            boxShadow: "0 20px 50px rgba(0,0,0,0.12)",
+          }}
+        >
+          <h1 style={{ fontSize: "34px", marginBottom: "10px" }}>
+            Afrikanitas Studio
+          </h1>
+
+          <p style={{ color: "#777", marginBottom: "30px" }}>
+            Área privada do administrador.
+          </p>
+
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={inputStyle}
+          />
+
+          <input
+            type="password"
+            placeholder="Senha"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={inputStyle}
+          />
+
+          <button onClick={login} style={blackButton}>
+            Entrar
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main
       style={{
         minHeight: "100vh",
         padding: "40px",
         fontFamily: "Arial",
-        background: "#f8f5ef",
+        background: "linear-gradient(135deg, #f8f1e7, #efe0cb)",
       }}
     >
-      <h1 style={{ fontSize: "46px", marginBottom: "10px" }}>
-        Admin Afrikanitas Studio
-      </h1>
+      <header
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "35px",
+        }}
+      >
+        <div>
+          <h1 style={{ fontSize: "46px", marginBottom: "10px" }}>
+            Afrikanitas Studio
+          </h1>
 
-      <p style={{ fontSize: "18px", marginBottom: "35px", color: "#555" }}>
-        Gerir links, clientes e fotografias escolhidas.
-      </p>
+          <p style={{ fontSize: "18px", color: "#555" }}>
+            Painel premium de clientes, galerias e fotografias escolhidas.
+          </p>
+        </div>
+
+        <button onClick={logout} style={lightButton}>
+          Sair
+        </button>
+      </header>
 
       <section
         style={{
-          background: "#fff",
-          padding: "28px",
-          borderRadius: "26px",
-          marginBottom: "40px",
-          boxShadow: "0 12px 35px rgba(0,0,0,0.08)",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: "20px",
+          marginBottom: "35px",
         }}
       >
-        <h2 style={{ marginBottom: "18px" }}>Gerar link da cliente</h2>
+        <div style={statCard}>
+          <h3>Total de clientes</h3>
+          <strong>{totalClients}</strong>
+        </div>
+
+        <div style={statCard}>
+          <h3>Fotos selecionadas</h3>
+          <strong>{totalPhotos}</strong>
+        </div>
+
+        <div style={statCard}>
+          <h3>Status</h3>
+          <strong>Online</strong>
+        </div>
+      </section>
+
+      <section style={card}>
+        <h2>Gerar link da cliente</h2>
 
         <input
           type="text"
           placeholder="Nome da cliente"
           value={clientName}
           onChange={(e) => setClientName(e.target.value)}
-          style={{
-            width: "100%",
-            maxWidth: "450px",
-            padding: "15px",
-            borderRadius: "16px",
-            border: "1px solid #ccc",
-            fontSize: "16px",
-            display: "block",
-            marginBottom: "14px",
-          }}
+          style={inputStyle}
         />
 
         <input
@@ -132,16 +273,7 @@ const clientLink = cleanClientName
           placeholder="WhatsApp da cliente. Ex: 244923000000"
           value={whatsapp}
           onChange={(e) => setWhatsapp(e.target.value)}
-          style={{
-            width: "100%",
-            maxWidth: "450px",
-            padding: "15px",
-            borderRadius: "16px",
-            border: "1px solid #ccc",
-            fontSize: "16px",
-            display: "block",
-            marginBottom: "18px",
-          }}
+          style={inputStyle}
         />
 
         {clientLink && (
@@ -150,61 +282,52 @@ const clientLink = cleanClientName
           </p>
         )}
 
-        <button
-          onClick={copyLink}
-          style={{
-            padding: "14px 24px",
-            background: "#111",
-            color: "#fff",
-            border: "none",
-            borderRadius: "30px",
-            cursor: "pointer",
-            fontSize: "16px",
-            marginRight: "10px",
-          }}
-        >
+        <button onClick={copyLink} style={blackButton}>
           {copied ? "Link copiado" : "Copiar link"}
         </button>
 
         {whatsappLink && (
           <a href={whatsappLink} target="_blank">
-            <button
-              style={{
-                padding: "14px 24px",
-                background: "#25D366",
-                color: "#fff",
-                border: "none",
-                borderRadius: "30px",
-                cursor: "pointer",
-                fontSize: "16px",
-              }}
-            >
-              Enviar no WhatsApp
-            </button>
+            <button style={whatsappButton}>Enviar WhatsApp elegante</button>
           </a>
         )}
       </section>
 
+      <section style={card}>
+        <h2>Área do fotógrafo</h2>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            gap: "18px",
+          }}
+        >
+          <div style={miniCard}>Sessões</div>
+          <div style={miniCard}>Clientes</div>
+          <div style={miniCard}>Status</div>
+          <div style={miniCard}>Entregas</div>
+        </div>
+      </section>
+
       <section>
-        <h2 style={{ fontSize: "32px", marginBottom: "25px" }}>
+        <h2 style={{ fontSize: "32px", marginBottom: "18px" }}>
           Seleções por cliente
         </h2>
 
-        {Object.keys(groupedSelections).length === 0 && (
-          <p>Ainda não há seleções.</p>
-        )}
+        <input
+          type="text"
+          placeholder="Filtrar cliente automaticamente..."
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          style={inputStyle}
+        />
+
+        {filteredGroups.length === 0 && <p>Ainda não há seleções.</p>}
 
         <div style={{ display: "grid", gap: "28px" }}>
-          {Object.entries(groupedSelections).map(([client, photos]) => (
-            <div
-              key={client}
-              style={{
-                background: "#fff",
-                padding: "26px",
-                borderRadius: "26px",
-                boxShadow: "0 12px 35px rgba(0,0,0,0.08)",
-              }}
-            >
+          {filteredGroups.map(([client, photos]) => (
+            <div key={client} style={card}>
               <h3 style={{ fontSize: "26px", marginBottom: "10px" }}>
                 {client}
               </h3>
@@ -221,7 +344,7 @@ const clientLink = cleanClientName
                 }}
               >
                 {photos.map((item) => (
-                  <div key={item.id}>
+                  <div key={item.id} style={photoCard}>
                     {item.photo_name && (
                       <img
                         src={item.photo_name}
@@ -246,9 +369,9 @@ const clientLink = cleanClientName
                       {item.photo_name}
                     </p>
 
-                    <p style={{ fontSize: "12px", color: "#777" }}>
-                      {new Date(item.created_at).toLocaleString()}
-                    </p>
+                    <a href={item.photo_name} download target="_blank">
+                      <button style={lightButton}>Baixar foto</button>
+                    </a>
                   </div>
                 ))}
               </div>
@@ -259,3 +382,74 @@ const clientLink = cleanClientName
     </main>
   );
 }
+
+const inputStyle = {
+  width: "100%",
+  maxWidth: "480px",
+  padding: "15px",
+  borderRadius: "16px",
+  border: "1px solid #d6c5ad",
+  fontSize: "16px",
+  display: "block",
+  marginBottom: "14px",
+};
+
+const blackButton = {
+  padding: "14px 24px",
+  background: "#111",
+  color: "#fff",
+  border: "none",
+  borderRadius: "30px",
+  cursor: "pointer",
+  fontSize: "16px",
+  marginRight: "10px",
+  marginBottom: "10px",
+};
+
+const whatsappButton = {
+  padding: "14px 24px",
+  background: "#25D366",
+  color: "#fff",
+  border: "none",
+  borderRadius: "30px",
+  cursor: "pointer",
+  fontSize: "16px",
+};
+
+const lightButton = {
+  padding: "12px 20px",
+  background: "#fff",
+  color: "#111",
+  border: "1px solid #d6c5ad",
+  borderRadius: "30px",
+  cursor: "pointer",
+  fontSize: "15px",
+};
+
+const card = {
+  background: "rgba(255,255,255,0.9)",
+  padding: "28px",
+  borderRadius: "28px",
+  marginBottom: "35px",
+  boxShadow: "0 16px 40px rgba(0,0,0,0.08)",
+};
+
+const statCard = {
+  background: "#fff",
+  padding: "24px",
+  borderRadius: "24px",
+  boxShadow: "0 12px 35px rgba(0,0,0,0.08)",
+};
+
+const miniCard = {
+  background: "#f8f1e7",
+  padding: "22px",
+  borderRadius: "20px",
+  fontWeight: "bold",
+};
+
+const photoCard = {
+  background: "#fffaf3",
+  padding: "14px",
+  borderRadius: "22px",
+};
