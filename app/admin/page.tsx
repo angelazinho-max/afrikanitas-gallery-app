@@ -56,11 +56,9 @@ export default function AdminPage() {
 
   const cleanClientName = clientName.trim().toLowerCase().replace(/\s+/g, "-");
 
-  const clientLink =
-    typeof window !== "undefined" && cleanClientName
-      ? `${window.location.origin}/?cliente=${cleanClientName}`
-      : "";
-
+  const clientLink = cleanClientName
+  ? `https://afrikanitas-gallery-3d68mcc4a-afrikanitas-studio-s-projects.vercel.app/?cliente=${cleanClientName}`
+  : "";
   const whatsappText = encodeURIComponent(
     `Olá ${clientName} ✨\n\nAs suas fotografias já estão disponíveis para seleção no Afrikanitas Studio.\n\nEscolha as suas favoritas através do link abaixo:\n\n${clientLink}`
   );
