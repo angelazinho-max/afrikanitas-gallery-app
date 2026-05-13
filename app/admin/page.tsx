@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -15,7 +14,6 @@ export default function AdminPage() {
   const [session, setSession] = useState<any>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
   const [clientName, setClientName] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [copied, setCopied] = useState(false);
@@ -62,42 +60,10 @@ export default function AdminPage() {
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (!isAuthenticated) {
-  return (
-    <main className="min-h-screen bg-[#f6f1eb] flex items-center justify-center p-6">
-      <div className="bg-white rounded-3xl shadow-xl p-10 w-full max-w-md">
-        <h1 className="text-3xl font-bold mb-6 text-center">
-          Afrikanitas Studio
-        </h1>
-
-        <input
-          type="email"
-          placeholder="Email"
-          className="w-full border p-3 rounded-xl mb-4"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-
-        <input
-          type="password"
-          placeholder="Senha"
-          className="w-full border p-3 rounded-xl mb-6"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-
-        <button
-          onClick={handleLogin}
-          className="w-full bg-black text-white py-3 rounded-xl"
-        >
-          Entrar
-        </button>
-      </div>
-    </main>
-  );
-}
-
-return (
+    if (error) {
+      console.log(error);
+      return;
+    }
 
     setSelections((data || []) as Selection[]);
   };
@@ -130,9 +96,7 @@ return (
     await navigator.clipboard.writeText(clientLink);
     setCopied(true);
 
-    setTimeout(() => {
-      setCopied(false);
-    }, 2000);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const groupedSelections = useMemo(() => {
@@ -140,11 +104,7 @@ return (
 
     selections.forEach((item) => {
       const name = item.client_name || "Cliente sem nome";
-
-      if (!groups[name]) {
-        groups[name] = [];
-      }
-
+      if (!groups[name]) groups[name] = [];
       groups[name].push(item);
     });
 
@@ -162,16 +122,7 @@ return (
 
   if (loading) {
     return (
-      <main
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#f8f1e7",
-          fontFamily: "Arial",
-        }}
-      >
+      <main style={loadingPage}>
         <div style={{ fontSize: "22px" }}>A carregar Afrikanitas Studio...</div>
       </main>
     );
@@ -179,27 +130,8 @@ return (
 
   if (!session) {
     return (
-      <main
-        style={{
-          minHeight: "100vh",
-          background: "linear-gradient(135deg, #f8f1e7, #ead8c0)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontFamily: "Arial",
-          padding: "30px",
-        }}
-      >
-        <section
-          style={{
-            background: "#fff",
-            padding: "40px",
-            borderRadius: "30px",
-            maxWidth: "420px",
-            width: "100%",
-            boxShadow: "0 20px 50px rgba(0,0,0,0.12)",
-          }}
-        >
+      <main style={loginPage}>
+        <section style={loginCard}>
           <h1 style={{ fontSize: "34px", marginBottom: "10px" }}>
             Afrikanitas Studio
           </h1>
@@ -233,22 +165,8 @@ return (
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        padding: "40px",
-        fontFamily: "Arial",
-        background: "linear-gradient(135deg, #f8f1e7, #efe0cb)",
-      }}
-    >
-      <header
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "35px",
-        }}
-      >
+    <main style={mainPage}>
+      <header style={headerStyle}>
         <div>
           <h1 style={{ fontSize: "46px", marginBottom: "10px" }}>
             Afrikanitas Studio
@@ -264,14 +182,7 @@ return (
         </button>
       </header>
 
-      <section
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: "20px",
-          marginBottom: "35px",
-        }}
-      >
+      <section style={statsGrid}>
         <div style={statCard}>
           <h3>Total de clientes</h3>
           <strong>{totalClients}</strong>
@@ -327,13 +238,7 @@ return (
       <section style={card}>
         <h2>Área do fotógrafo</h2>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: "18px",
-          }}
-        >
+        <div style={miniGrid}>
           <div style={miniCard}>Sessões</div>
           <div style={miniCard}>Clientes</div>
           <div style={miniCard}>Status</div>
@@ -367,38 +272,18 @@ return (
                 {photos.length} fotografia(s) selecionada(s)
               </p>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                  gap: "18px",
-                }}
-              >
+              <div style={photoGrid}>
                 {photos.map((item) => (
                   <div key={item.id} style={photoCard}>
                     {item.photo_name && (
                       <img
                         src={item.photo_name}
                         alt={item.photo_name}
-                        style={{
-                          width: "100%",
-                          height: "220px",
-                          objectFit: "cover",
-                          borderRadius: "18px",
-                          marginBottom: "10px",
-                        }}
+                        style={photoImage}
                       />
                     )}
 
-                    <p
-                      style={{
-                        fontSize: "13px",
-                        wordBreak: "break-all",
-                        color: "#444",
-                      }}
-                    >
-                      {item.photo_name}
-                    </p>
+                    <p style={photoText}>{item.photo_name}</p>
 
                     <a href={item.photo_name} download target="_blank">
                       <button style={lightButton}>Baixar foto</button>
@@ -413,6 +298,67 @@ return (
     </main>
   );
 }
+
+const loadingPage = {
+  minHeight: "100vh",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "#f8f1e7",
+  fontFamily: "Arial",
+};
+
+const loginPage = {
+  minHeight: "100vh",
+  background: "linear-gradient(135deg, #f8f1e7, #ead8c0)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontFamily: "Arial",
+  padding: "30px",
+};
+
+const loginCard = {
+  background: "#fff",
+  padding: "40px",
+  borderRadius: "30px",
+  maxWidth: "420px",
+  width: "100%",
+  boxShadow: "0 20px 50px rgba(0,0,0,0.12)",
+};
+
+const mainPage = {
+  minHeight: "100vh",
+  padding: "40px",
+  fontFamily: "Arial",
+  background: "linear-gradient(135deg, #f8f1e7, #efe0cb)",
+};
+
+const headerStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: "35px",
+};
+
+const statsGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: "20px",
+  marginBottom: "35px",
+};
+
+const miniGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: "18px",
+};
+
+const photoGrid = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: "18px",
+};
 
 const inputStyle = {
   width: "100%",
@@ -483,4 +429,18 @@ const photoCard = {
   background: "#fffaf3",
   padding: "14px",
   borderRadius: "22px",
+};
+
+const photoImage = {
+  width: "100%",
+  height: "220px",
+  objectFit: "cover" as const,
+  borderRadius: "18px",
+  marginBottom: "10px",
+};
+
+const photoText = {
+  fontSize: "13px",
+  wordBreak: "break-all" as const,
+  color: "#444",
 };
