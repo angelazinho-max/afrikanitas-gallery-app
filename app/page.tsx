@@ -33,14 +33,19 @@ export default function Home() {
       });
 
     if (error) {
-      console.log(error);
+      console.log("Erro ao buscar fotos:", error.message);
       setLoadingPhotos(false);
       return;
     }
 
-    const photoList =
+    const photoList: Photo[] =
       data
-        ?.filter((file) => file.name !== ".emptyFolderPlaceholder")
+        ?.filter((file) => {
+          return (
+            file.name !== ".emptyFolderPlaceholder" &&
+            !file.name.startsWith(".")
+          );
+        })
         .map((file) => {
           const { data: publicUrl } = supabase.storage
             .from("photos")
@@ -56,10 +61,13 @@ export default function Home() {
     setLoadingPhotos(false);
   };
 
-  const togglePhoto = (photo: string) => {
+  const togglePhoto = (photoUrl: string) => {
     setSuccess(false);
+
     setSelected((prev) =>
-      prev.includes(photo) ? prev.filter((p) => p !== photo) : [...prev, photo]
+      prev.includes(photoUrl)
+        ? prev.filter((p) => p !== photoUrl)
+        : [...prev, photoUrl]
     );
   };
 
@@ -91,9 +99,7 @@ export default function Home() {
   return (
     <main style={page}>
       <section style={hero}>
-        <div style={logoBox}>
-          <img src="/logo.png" alt="Afrikanitas Studio" style={logo} />
-        </div>
+        <img src="/logo.png" alt="Afrikanitas Studio" style={logo} />
 
         <p style={smallTitle}>Galeria privada</p>
 
@@ -113,9 +119,17 @@ export default function Home() {
         <p style={counter}>{selected.length} fotografia(s) selecionada(s)</p>
       </section>
 
-      {loadingPhotos ? (
+      {loadingPhotos && (
         <p style={loadingText}>A carregar fotografias...</p>
-      ) : (
+      )}
+
+      {!loadingPhotos && photos.length === 0 && (
+        <p style={loadingText}>
+          Ainda não há fotografias carregadas nesta galeria.
+        </p>
+      )}
+
+      {!loadingPhotos && photos.length > 0 && (
         <section style={grid}>
           {photos.map((photo) => (
             <div
@@ -165,13 +179,10 @@ const hero = {
   textAlign: "center" as const,
 };
 
-const logoBox = {
-  marginBottom: "18px",
-};
-
 const logo = {
-  maxWidth: "170px",
+  maxWidth: "160px",
   height: "auto",
+  marginBottom: "18px",
 };
 
 const smallTitle = {
