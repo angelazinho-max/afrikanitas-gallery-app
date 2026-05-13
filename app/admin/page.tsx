@@ -1,4 +1,3 @@
-Novo código: 
 
 "use client";
 
