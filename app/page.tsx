@@ -15,49 +15,72 @@ export default function Home() {
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingPhotos, setLoadingPhotos] = useState(true);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    setCliente(params.get("cliente") || "Cliente sem nome");
-    fetchPhotos();
+    const clientFromUrl = params.get("cliente") || "Cliente sem nome";
+    setCliente(clientFromUrl);
+    fetchPhotos(clientFromUrl);
   }, []);
 
-  const fetchPhotos = async () => {
+  const normalizeName = (name: string) =>
+    name
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, "-");
+
+  const fetchPhotos = async (clientName: string) => {
     setLoadingPhotos(true);
 
-    const { data, error } = await supabase.storage
-      .from("photos")
-      .list("", {
-        limit: 100,
-        sortBy: { column: "created_at", order: "desc" },
-      });
+    const namesToTry = Array.from(
+      new Set([clientName, normalizeName(clientName)])
+    );
 
-    if (error) {
-      console.log("Erro ao buscar fotos:", error.message);
-      setLoadingPhotos(false);
-      return;
+    let foundPhotos: Photo[] = [];
+
+    for (const folderName of namesToTry) {
+      const { data, error } = await supabase.storage
+        .from("photos")
+        .list(folderName, {
+          limit: 1000,
+          sortBy: { column: "created_at", order: "desc" },
+        });
+
+      if (error) {
+        console.log("Erro ao buscar fotos:", error.message);
+        continue;
+      }
+
+      const photoList: Photo[] =
+        data
+          ?.filter(
+            (file) =>
+              file.name !== ".emptyFolderPlaceholder" &&
+              !file.name.startsWith(".")
+          )
+          .map((file) => {
+            const fullPath = `${folderName}/${file.name}`;
+
+            const { data: publicUrl } = supabase.storage
+              .from("photos")
+              .getPublicUrl(fullPath);
+
+            return {
+              name: file.name,
+              url: publicUrl.publicUrl,
+            };
+          }) || [];
+
+      if (photoList.length > 0) {
+        foundPhotos = photoList;
+        break;
+      }
     }
 
-    const photoList: Photo[] =
-      data
-        ?.filter((file) => {
-          return (
-            file.name !== ".emptyFolderPlaceholder" &&
-            !file.name.startsWith(".")
-          );
-        })
-        .map((file) => {
-          const { data: publicUrl } = supabase.storage
-            .from("photos")
-            .getPublicUrl(file.name);
-
-          return {
-            name: file.name,
-            url: publicUrl.publicUrl,
-          };
-        }) || [];
-
-    setPhotos(photoList);
+    setPhotos(foundPhotos);
     setLoadingPhotos(false);
   };
 
@@ -73,7 +96,7 @@ export default function Home() {
 
   const sendSelection = async () => {
     if (selected.length === 0) {
-      alert("Selecione pelo menos uma foto.");
+      alert("Selecione pelo menos uma fotografia.");
       return;
     }
 
@@ -86,8 +109,8 @@ export default function Home() {
       });
 
       if (error) {
-        setLoading(false);
         alert("Erro ao enviar: " + error.message);
+        setLoading(false);
         return;
       }
     }
@@ -96,19 +119,28 @@ export default function Home() {
     setSuccess(true);
   };
 
+  const nextPhoto = () => {
+    if (activeIndex === null) return;
+    setActiveIndex((activeIndex + 1) % photos.length);
+  };
+
+  const previousPhoto = () => {
+    if (activeIndex === null) return;
+    setActiveIndex(activeIndex === 0 ? photos.length - 1 : activeIndex - 1);
+  };
+
+  const activePhoto = activeIndex !== null ? photos[activeIndex] : null;
+
   return (
     <main style={page}>
       <section style={hero}>
-
-        <p style={smallTitle}>Galeria privada</p>
+        <p style={smallTitle}>Galeria Privada</p>
 
         <h1 style={title}>Afrikanitas Studio</h1>
 
         <p style={intro}>
-          Bem-vinda à sua galeria privada Afrikanitas Studio. Cada fotografia
-          foi criada para guardar com elegância a beleza deste momento. Escolha
-          com calma as suas imagens favoritas; a nossa equipa irá preparar a
-          seleção final com todo cuidado.
+          Escolha as suas fotografias favoritas. Clique numa fotografia para
+          abrir em destaque.
         </p>
 
         <p style={clientText}>
@@ -118,155 +150,261 @@ export default function Home() {
         <p style={counter}>{selected.length} fotografia(s) selecionada(s)</p>
       </section>
 
-      {loadingPhotos && (
-        <p style={loadingText}>A carregar fotografias...</p>
-      )}
+      {loadingPhotos && <p style={loadingText}>A carregar fotografias...</p>}
 
       {!loadingPhotos && photos.length === 0 && (
-        <p style={loadingText}>
-          Ainda não há fotografias carregadas nesta galeria.
-        </p>
+        <p style={emptyText}>Nenhuma fotografia encontrada.</p>
       )}
 
       {!loadingPhotos && photos.length > 0 && (
         <section style={grid}>
-          {photos.map((photo) => (
-            <div
-              key={photo.url}
-              onClick={() => togglePhoto(photo.url)}
-              style={{
-                ...photoCard,
-                border: selected.includes(photo.url)
-                  ? "3px solid #111"
-                  : "1px solid rgba(0,0,0,0.08)",
-              }}
-            >
-              <img src={photo.url} alt={photo.name} style={photoImage} />
+          {photos.map((photo, index) => {
+            const isSelected = selected.includes(photo.url);
 
-              {selected.includes(photo.url) && (
-                <div style={selectedBadge}>Selecionada</div>
-              )}
-            </div>
-          ))}
+            return (
+              <div key={photo.url} style={photoCard}>
+                <button
+                  onClick={() => togglePhoto(photo.url)}
+                  style={{
+                    ...heartButton,
+                    background: isSelected ? "#111" : "rgba(255,255,255,0.9)",
+                    color: isSelected ? "#fff" : "#111",
+                  }}
+                >
+                  ♥
+                </button>
+
+                <img
+                  src={photo.url}
+                  alt={photo.name}
+                  style={photoImage}
+                  onClick={() => setActiveIndex(index)}
+                />
+              </div>
+            );
+          })}
         </section>
       )}
 
-      {success && (
-        <p style={successText}>
-          Seleção enviada com sucesso. Obrigada por escolher o Afrikanitas
-          Studio ✨
-        </p>
-      )}
+      {success && <p style={successText}>Seleção enviada com sucesso ✨</p>}
 
       <button onClick={sendSelection} disabled={loading} style={button}>
         {loading ? "A enviar..." : "Enviar Seleção"}
       </button>
+
+      {activePhoto && (
+        <div style={modalOverlay} onClick={() => setActiveIndex(null)}>
+          <div style={modalContent} onClick={(e) => e.stopPropagation()}>
+            <button style={closeButton} onClick={() => setActiveIndex(null)}>
+              ×
+            </button>
+
+            <button style={arrowLeft} onClick={previousPhoto}>
+              ‹
+            </button>
+
+            <img src={activePhoto.url} alt={activePhoto.name} style={mainImage} />
+
+            <button style={arrowRight} onClick={nextPhoto}>
+              ›
+            </button>
+
+            <div style={modalCounter}>
+              {activeIndex! + 1} / {photos.length}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
 
 const page = {
   minHeight: "100vh",
-  padding: "38px",
+  padding: "20px",
+  background: "Canvas",
+  color: "CanvasText",
   fontFamily: "Georgia, 'Times New Roman', serif",
-  background: "linear-gradient(135deg, #f8f1e7, #ead8c0)",
+  colorScheme: "light dark",
 };
 
 const hero = {
-  maxWidth: "860px",
-  margin: "0 auto 38px",
+  maxWidth: "760px",
+  margin: "0 auto 28px",
   textAlign: "center" as const,
 };
 
 const smallTitle = {
   textTransform: "uppercase" as const,
-  letterSpacing: "4px",
+  letterSpacing: "6px",
   fontSize: "12px",
-  color: "#8b7355",
-  marginBottom: "12px",
+  color: "GrayText",
+  marginBottom: "18px",
 };
 
 const title = {
-  fontSize: "52px",
+  fontSize: "46px",
   marginBottom: "18px",
   fontWeight: 400,
-  color: "#1c1c1c",
+  color: "CanvasText",
 };
 
 const intro = {
   fontSize: "18px",
-  lineHeight: 1.7,
-  color: "#5c5147",
-  marginBottom: "22px",
+  lineHeight: 1.5,
+  color: "CanvasText",
 };
 
 const clientText = {
   fontSize: "18px",
-  color: "#222",
+  color: "CanvasText",
 };
 
 const counter = {
-  fontSize: "15px",
-  color: "#6b5d4f",
+  fontSize: "16px",
+  color: "GrayText",
 };
 
 const loadingText = {
   textAlign: "center" as const,
-  fontSize: "18px",
+  color: "CanvasText",
+};
+
+const emptyText = {
+  textAlign: "center" as const,
+  color: "GrayText",
 };
 
 const grid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
-  gap: "22px",
-  maxWidth: "1180px",
+  gridTemplateColumns: "repeat(auto-fill, minmax(95px, 1fr))",
+  gap: "10px",
+  maxWidth: "1100px",
   margin: "0 auto",
 };
 
 const photoCard = {
   position: "relative" as const,
-  borderRadius: "24px",
+  borderRadius: "12px",
   overflow: "hidden",
-  background: "#fff",
-  padding: "10px",
-  boxShadow: "0 16px 38px rgba(0,0,0,0.08)",
-  cursor: "pointer",
+  background: "rgba(127,127,127,0.15)",
 };
 
 const photoImage = {
   width: "100%",
-  height: "230px",
+  aspectRatio: "1 / 1",
   objectFit: "cover" as const,
-  borderRadius: "18px",
   display: "block",
+  cursor: "pointer",
 };
 
-const selectedBadge = {
+const heartButton = {
   position: "absolute" as const,
-  bottom: "18px",
-  right: "18px",
-  background: "#111",
-  color: "#fff",
-  padding: "8px 14px",
-  borderRadius: "30px",
-  fontSize: "13px",
+  top: "7px",
+  right: "7px",
+  zIndex: 2,
+  width: "28px",
+  height: "28px",
+  borderRadius: "50%",
+  border: "none",
+  fontSize: "15px",
+  cursor: "pointer",
 };
 
 const successText = {
-  marginTop: "28px",
   textAlign: "center" as const,
-  fontSize: "18px",
-  color: "#2f5f3a",
+  color: "#2f8b43",
+  marginTop: "24px",
 };
 
 const button = {
   display: "block",
-  margin: "32px auto 0",
-  padding: "15px 36px",
-  background: "#111",
-  color: "#fff",
+  margin: "28px auto 0",
+  padding: "15px 34px",
+  background: "CanvasText",
+  color: "Canvas",
   border: "none",
   borderRadius: "40px",
   cursor: "pointer",
   fontSize: "16px",
+};
+
+const modalOverlay = {
+  position: "fixed" as const,
+  inset: 0,
+  background: "rgba(0,0,0,0.92)",
+  zIndex: 9999,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "14px",
+};
+
+const modalContent = {
+  position: "relative" as const,
+  width: "100%",
+  maxWidth: "1000px",
+  height: "82vh",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const mainImage = {
+  maxWidth: "100%",
+  maxHeight: "100%",
+  objectFit: "contain" as const,
+  borderRadius: "16px",
+};
+
+const closeButton = {
+  position: "absolute" as const,
+  top: "10px",
+  right: "10px",
+  background: "transparent",
+  color: "#fff",
+  border: "none",
+  fontSize: "42px",
+  cursor: "pointer",
+};
+
+const arrowLeft = {
+  position: "absolute" as const,
+  left: "10px",
+  top: "50%",
+  transform: "translateY(-50%)",
+  width: "48px",
+  height: "48px",
+  borderRadius: "50%",
+  border: "1px solid rgba(255,255,255,0.3)",
+  background: "rgba(255,255,255,0.12)",
+  color: "#fff",
+  fontSize: "40px",
+  cursor: "pointer",
+};
+
+const arrowRight = {
+  position: "absolute" as const,
+  right: "10px",
+  top: "50%",
+  transform: "translateY(-50%)",
+  width: "48px",
+  height: "48px",
+  borderRadius: "50%",
+  border: "1px solid rgba(255,255,255,0.3)",
+  background: "rgba(255,255,255,0.12)",
+  color: "#fff",
+  fontSize: "40px",
+  cursor: "pointer",
+};
+
+const modalCounter = {
+  position: "absolute" as const,
+  bottom: "16px",
+  left: "50%",
+  transform: "translateX(-50%)",
+  color: "#fff",
+  background: "rgba(0,0,0,0.5)",
+  padding: "8px 14px",
+  borderRadius: "20px",
 };

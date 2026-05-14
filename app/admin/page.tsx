@@ -25,25 +25,38 @@ export default function AdminPage() {
 
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
-  const [isDark, setIsDark] = useState(false);
+
+  const [activePhotos, setActivePhotos] = useState<Selection[]>([]);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  const [deletedClients, setDeletedClients] = useState<string[]>([]);
+  const [favoritePhotos, setFavoritePhotos] = useState<string[]>([]);
 
   const cleanClientName = clientName.trim().toLowerCase().replace(/\s+/g, "-");
-  const s = getStyles(isDark);
+
+  const SITE_URL =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    "https://galeria.afrikanitasstudio.com";
+
+  const expiresAt = Date.now() + 72 * 60 * 60 * 1000;
+
+  const clientLink = cleanClientName
+    ? `${SITE_URL}/?cliente=${cleanClientName}&exp=${expiresAt}`
+    : "";
 
   useEffect(() => {
-    checkSession();
+    const savedDeletedClients = localStorage.getItem("deletedClients");
+    const savedFavorites = localStorage.getItem("favoritePhotos");
 
-    const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    setIsDark(darkQuery.matches);
-
-    const listener = (e: MediaQueryListEvent) => setIsDark(e.matches);
-    darkQuery.addEventListener("change", listener);
-
-    if ("Notification" in window) {
-      Notification.requestPermission();
+    if (savedDeletedClients) {
+      setDeletedClients(JSON.parse(savedDeletedClients));
     }
 
-    return () => darkQuery.removeEventListener("change", listener);
+    if (savedFavorites) {
+      setFavoritePhotos(JSON.parse(savedFavorites));
+    }
+
+    checkSession();
   }, []);
 
   useEffect(() => {
@@ -54,17 +67,7 @@ export default function AdminPage() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "selections" },
-        () => {
-          fetchSelections();
-
-          if ("Notification" in window && Notification.permission === "granted") {
-            new Notification("Afrikanitas Studio", {
-              body: "Uma cliente acabou de selecionar fotografias.",
-            });
-          } else {
-            alert("Uma cliente acabou de selecionar fotografias.");
-          }
-        }
+        () => fetchSelections()
       )
       .subscribe();
 
@@ -79,7 +82,7 @@ export default function AdminPage() {
     setLoading(false);
 
     if (data.session) {
-      fetchSelections();
+      await fetchSelections();
     }
   };
 
@@ -109,7 +112,7 @@ export default function AdminPage() {
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.log(error);
+      console.log(error.message);
       return;
     }
 
@@ -129,39 +132,85 @@ export default function AdminPage() {
     setUploading(true);
     setUploadMessage("");
 
-    for (const file of Array.from(files)) {
-      const safeName = file.name.replace(/\s+/g, "-").toLowerCase();
-      const fileName = `${cleanClientName}/${Date.now()}-${safeName}`;
+    try {
+      const uploads = Array.from(files).map(async (file) => {
+        const safeName = file.name.replace(/\s+/g, "-").toLowerCase();
+        const fileName = `${cleanClientName}/${Date.now()}-${safeName}`;
 
-      const { error } = await supabase.storage
-        .from("photos")
-        .upload(fileName, file, {
-          cacheControl: "3600",
+        return supabase.storage.from("photos").upload(fileName, file, {
+          cacheControl: "31536000",
           upsert: false,
         });
+      });
 
-      if (error) {
-        setUploading(false);
-        alert("Erro ao fazer upload: " + error.message);
+      const results = await Promise.all(uploads);
+      const failed = results.find((result) => result.error);
+
+      if (failed?.error) {
+        alert("Erro ao fazer upload: " + failed.error.message);
         return;
       }
-    }
 
-    setUploading(false);
-    setUploadMessage("Fotografias carregadas com sucesso.");
-    event.target.value = "";
+      setUploadMessage("Fotografias carregadas com sucesso.");
+      event.target.value = "";
+    } catch (error) {
+      console.log(error);
+      alert("Erro ao carregar fotografias.");
+    } finally {
+      setUploading(false);
+    }
   };
 
-  const SITE_URL =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    "https://galeria.afrikanitasstudio.com";
+  const deleteClient = async (client: string) => {
+    const ok = confirm(`Tem certeza que deseja apagar a cliente "${client}"?`);
+    if (!ok) return;
 
-  const clientLink = cleanClientName
-    ? `${SITE_URL}/?cliente=${cleanClientName}`
-    : "";
+    const { data: files } = await supabase.storage
+      .from("photos")
+      .list(client, { limit: 1000 });
+
+    if (files && files.length > 0) {
+      const filePaths = files.map((file) => `${client}/${file.name}`);
+      await supabase.storage.from("photos").remove(filePaths);
+    }
+
+    await supabase.from("selections").delete().eq("client_name", client);
+
+    setSelections((prev) => prev.filter((item) => item.client_name !== client));
+    alert("Cliente apagada com sucesso.");
+  };
+
+  const openPhoto = (photos: Selection[], index: number) => {
+    setActivePhotos(photos);
+    setActiveIndex(index);
+  };
+
+  const closePhoto = () => {
+    setActivePhotos([]);
+    setActiveIndex(null);
+  };
+
+  const nextPhoto = () => {
+    if (activeIndex === null) return;
+    setActiveIndex((activeIndex + 1) % activePhotos.length);
+  };
+
+  const previousPhoto = () => {
+    if (activeIndex === null) return;
+    setActiveIndex(activeIndex === 0 ? activePhotos.length - 1 : activeIndex - 1);
+  };
+
+  const toggleFavorite = (photo: string) => {
+    const updated = favoritePhotos.includes(photo)
+      ? favoritePhotos.filter((item) => item !== photo)
+      : [...favoritePhotos, photo];
+
+    setFavoritePhotos(updated);
+    localStorage.setItem("favoritePhotos", JSON.stringify(updated));
+  };
 
   const whatsappText = encodeURIComponent(
-    `Olá ${clientName}, tudo bem? ✨\n\nA sua galeria Afrikanitas Studio já está pronta.\n\nClique no link abaixo para escolher as suas fotografias favoritas:\n\n${clientLink}\n\nCom carinho,\nAfrikanitas Studio`
+    `Olá ${clientName}, tudo bem? 😃\n\nA sua galeria Afrikanitas Studio já está pronta, por favor escolha as suas fotos favoritas. As fotografias escolhidas serão editadas com todo o cuidado e carinho pela nossa equipa.\n\nClique no link abaixo para escolher as suas fotografias favoritas:\n\n${clientLink}\n\nEste link expira em 72 horas.\n\nCom carinho,\nAfrikanitas Studio`
   );
 
   const whatsappLink =
@@ -184,7 +233,7 @@ export default function AdminPage() {
     const groups: Record<string, Selection[]> = {};
 
     selections.forEach((item) => {
-      const name = item.client_name || "Cliente sem nome";
+      const name = item.client_name || "cliente-sem-nome";
       if (!groups[name]) groups[name] = [];
       groups[name].push(item);
     });
@@ -200,420 +249,196 @@ export default function AdminPage() {
 
   const totalClients = Object.keys(groupedSelections).length;
   const totalPhotos = selections.length;
+  const activePhoto = activeIndex !== null ? activePhotos[activeIndex] : null;
 
   if (loading) {
-    return (
-      <main style={s.loadingPage}>
-        <div style={{ fontSize: "22px" }}>A carregar Afrikanitas Studio...</div>
-      </main>
-    );
+    return <main style={styles.loadingPage}>A carregar Afrikanitas Studio...</main>;
   }
 
   if (!session) {
     return (
-      <main style={s.loginPage}>
-        <section style={s.loginCard}>
-          <div style={{ textAlign: "center", marginBottom: "18px" }}>
-            <img src="/logo.png" alt="Afrikanitas Studio" style={s.logo} />
-          </div>
+      <main style={styles.loginPage}>
+        <section style={styles.loginCard}>
+          <img src="/logo.png" alt="Afrikanitas Studio" style={styles.logo} />
+          <h1 style={styles.loginTitle}>Afrikanitas Studio</h1>
+          <p style={styles.muted}>Área privada do administrador.</p>
 
-          <h1 style={s.loginTitle}>Afrikanitas Studio</h1>
+          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} style={styles.input} />
+          <input type="password" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} style={styles.input} />
 
-          <p style={s.muted}>Área privada do administrador.</p>
-
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={s.inputStyle}
-          />
-
-          <input
-            type="password"
-            placeholder="Senha"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={s.inputStyle}
-          />
-
-          <button onClick={login} style={s.blackButton}>
-            Entrar
-          </button>
+          <button onClick={login} style={styles.blackButton}>Entrar</button>
         </section>
       </main>
     );
   }
 
   return (
-    <main style={s.mainPage}>
-      <header style={s.headerStyle}>
-        <div>
-          <img src="/logo.png" alt="Afrikanitas Studio" style={s.logoSmall} />
-
-          <h1 style={s.title}>Afrikanitas Studio</h1>
-
-          <p style={s.subtitle}>
-            Painel premium de clientes, galerias e fotografias escolhidas.
-          </p>
+    <main style={styles.page}>
+      <header style={styles.header}>
+        <div style={styles.brandArea}>
+          <img src="/logo.png" alt="Afrikanitas Studio" style={styles.logoSmall} />
+          <div>
+            <h1 style={styles.title}>Estúdio Afrikanitas</h1>
+            <p style={styles.subtitle}>Painel premium de clientes, galerias e fotografias escolhidas.</p>
+          </div>
         </div>
-
-        <button onClick={logout} style={s.lightButton}>
-          Sair
-        </button>
+        <button onClick={logout} style={styles.logoutButton}>Sair</button>
       </header>
 
-      <section style={s.statsGrid}>
-        <div style={s.statCard}>
-          <h3 style={{ color: s.muted.color }}>Total de clientes</h3>
-          <strong style={{ color: s.title.color, fontSize: "34px" }}>
-            {totalClients}
-          </strong>
-        </div>
-
-        <div style={s.statCard}>
-          <h3 style={{ color: s.muted.color }}>Fotos selecionadas</h3>
-          <strong style={{ color: s.title.color, fontSize: "34px" }}>
-            {totalPhotos}
-          </strong>
-        </div>
-
-        <div style={s.statCard}>
-          <h3 style={{ color: s.muted.color }}>Status</h3>
-          <strong style={{ color: s.title.color, fontSize: "28px" }}>
-            Online
-          </strong>
-        </div>
+      <section style={styles.statsGrid}>
+        <div style={styles.statCard}><p style={styles.statLabel}>Total de clientes</p><strong style={styles.statNumber}>{totalClients}</strong></div>
+        <div style={styles.statCard}><p style={styles.statLabel}>Fotos selecionadas</p><strong style={styles.statNumber}>{totalPhotos}</strong></div>
+        <div style={styles.statCard}><p style={styles.statLabel}>Status</p><strong style={styles.online}>Online</strong></div>
+        <div style={styles.statCard}><p style={styles.statLabel}>Última atualização</p><strong style={styles.statText}>Agora há pouco</strong></div>
       </section>
 
-      <section style={s.card}>
-        <h2 style={{ color: s.title.color }}>Carregar fotografias</h2>
+      <section style={styles.topGrid}>
+        <div style={styles.card}>
+          <h2 style={styles.sectionTitle}>Carregar fotografias</h2>
+          <p style={styles.muted}>Escreva o nome da cliente e carregue as fotografias.</p>
 
-        <p style={s.muted}>
-          Escreva o nome da cliente e carregue as fotografias. Elas serão
-          guardadas na pasta dessa cliente.
-        </p>
+          <input type="text" placeholder="Nome da cliente" value={clientName} onChange={(e) => setClientName(e.target.value)} style={styles.input} />
+          <input type="file" multiple accept="image/*" onChange={uploadPhotos} style={styles.input} />
 
-        <input
-          type="text"
-          placeholder="Nome da cliente"
-          value={clientName}
-          onChange={(e) => setClientName(e.target.value)}
-          style={s.inputStyle}
-        />
+          <p style={styles.small}>Formatos aceites: JPG, JPEG, PNG, WEBP</p>
 
-        <input
-          type="file"
-          multiple
-          accept="image/*"
-          onChange={uploadPhotos}
-          style={s.inputStyle}
-        />
+          <button style={styles.blackButton} disabled={uploading}>
+            {uploading ? "A carregar..." : "Carregar fotografias"}
+          </button>
 
-        {uploading && <p style={s.muted}>A enviar fotografias...</p>}
+          {uploadMessage && <p style={styles.success}>{uploadMessage}</p>}
+        </div>
 
-        {uploadMessage && (
-          <p style={{ color: isDark ? "#9ee6a8" : "#2f6f3e" }}>
-            {uploadMessage}
-          </p>
-        )}
-      </section>
+        <div style={styles.card}>
+          <h2 style={styles.sectionTitle}>Gerar link da cliente</h2>
 
-      <section style={s.card}>
-        <h2 style={{ color: s.title.color }}>Gerar link da cliente</h2>
+          <input type="text" placeholder="Nome da cliente" value={clientName} onChange={(e) => setClientName(e.target.value)} style={styles.input} />
+          <input type="text" placeholder="WhatsApp da cliente. Ex: 244923000000" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} style={styles.input} />
 
-        <input
-          type="text"
-          placeholder="Nome da cliente"
-          value={clientName}
-          onChange={(e) => setClientName(e.target.value)}
-          style={s.inputStyle}
-        />
+          <div style={styles.linkBox}>
+            <span style={styles.linkText}>{clientLink || "Link da galeria será gerado aqui"}</span>
+            <button onClick={copyLink} style={styles.copyButton}>{copied ? "Copiado" : "Copiar link"}</button>
+          </div>
 
-        <input
-          type="text"
-          placeholder="WhatsApp da cliente. Ex: 244923000000"
-          value={whatsapp}
-          onChange={(e) => setWhatsapp(e.target.value)}
-          style={s.inputStyle}
-        />
-
-        {clientLink && (
-          <p style={{ ...s.muted, wordBreak: "break-all" }}>
-            <strong>Link:</strong> {clientLink}
-          </p>
-        )}
-
-        <button onClick={copyLink} style={s.blackButton}>
-          {copied ? "Link copiado" : "Copiar link"}
-        </button>
-
-        {whatsappLink && (
-          <a href={whatsappLink} target="_blank">
-            <button style={s.whatsappButton}>Enviar WhatsApp elegante</button>
-          </a>
-        )}
+          {whatsappLink && (
+            <a href={whatsappLink} target="_blank" style={{ textDecoration: "none" }}>
+              <button style={styles.whatsappButton}>Enviar WhatsApp</button>
+            </a>
+          )}
+        </div>
       </section>
 
       <section>
-        <h2 style={s.sectionTitle}>Seleções por cliente</h2>
+        <h2 style={styles.sectionTitleBig}>Seleções por cliente</h2>
 
-        <input
-          type="text"
-          placeholder="Filtrar cliente automaticamente..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          style={s.inputStyle}
-        />
+        <input type="text" placeholder="Filtrar cliente automaticamente..." value={filter} onChange={(e) => setFilter(e.target.value)} style={styles.searchInput} />
 
-        {filteredGroups.length === 0 && (
-          <p style={s.muted}>Ainda não há seleções.</p>
-        )}
+        {filteredGroups.length === 0 && <p style={styles.muted}>Ainda não há seleções.</p>}
 
-        <div style={{ display: "grid", gap: "24px" }}>
+        <div style={styles.clientsList}>
           {filteredGroups.map(([client, photos]) => (
-            <div key={client} style={s.card}>
-              <h3 style={s.clientTitle}>{client}</h3>
+            <div key={client} style={styles.clientCard}>
+              <div style={styles.clientTop}>
+                <div>
+                  <h3 style={styles.clientName}>{client}</h3>
+                  <p style={styles.clientCount}>{photos.length} fotografia(s) selecionada(s)</p>
+                </div>
+                <button onClick={() => deleteClient(client)} style={styles.deleteButton}>Apagar cliente</button>
+              </div>
 
-              <p style={s.muted}>
-                {photos.length} fotografia(s) selecionada(s)
-              </p>
-
-              <div style={s.photoGrid}>
-                {photos.map((item) => (
-                  <div key={item.id} style={s.photoCard}>
-                    {item.photo_name && (
-                      <img
-                        src={item.photo_name}
-                        alt={item.photo_name}
-                        style={s.photoImage}
-                      />
-                    )}
-
-                    <p style={s.photoText}>{item.photo_name}</p>
-
-                    <a href={item.photo_name} download target="_blank">
-                      <button style={s.lightButton}>Baixar foto</button>
-                    </a>
-                  </div>
+              <div style={styles.photoGrid}>
+                {photos.map((item, index) => (
+                  <button key={item.id} style={styles.thumbButton} onClick={() => openPhoto(photos, index)}>
+                    <img src={item.photo_name} alt="Foto escolhida" style={styles.thumbImage} loading="lazy" decoding="async" />
+                  </button>
                 ))}
               </div>
             </div>
           ))}
         </div>
       </section>
+
+      {activePhoto && (
+        <div style={styles.modalOverlay} onClick={closePhoto}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalInfo}>
+              <strong>{activePhoto.client_name}</strong>
+              <span>{activeIndex! + 1} / {activePhotos.length}</span>
+            </div>
+
+            <button style={styles.closeButton} onClick={closePhoto}>×</button>
+            <button style={styles.arrowLeft} onClick={previousPhoto}>‹</button>
+
+            <img src={activePhoto.photo_name} alt="Foto ampliada" style={styles.modalImage} />
+
+            <button style={styles.arrowRight} onClick={nextPhoto}>›</button>
+
+            <div style={styles.modalBottom}>
+              <a href={activePhoto.photo_name} download target="_blank" style={{ textDecoration: "none" }}>
+                <button style={styles.downloadModal}>Baixar foto</button>
+              </a>
+
+              <button onClick={() => toggleFavorite(activePhoto.photo_name)} style={styles.heartModal}>
+                {favoritePhotos.includes(activePhoto.photo_name) ? "♥" : "♡"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
 
-function getStyles(isDark: boolean) {
-  const bg = isDark ? "#15110d" : "#f8f1e7";
-  const bg2 = isDark ? "#241b14" : "#efe0cb";
-  const cardBg = isDark ? "#241b14" : "#ffffff";
-  const text = isDark ? "#f8f1e7" : "#2b2118";
-  const muted = isDark ? "#d7c6ad" : "#5f5144";
-  const border = isDark ? "#6b5744" : "#d6c5ad";
-  const inputBg = isDark ? "#1c1510" : "#fffaf3";
-
-  return {
-    logo: {
-      maxWidth: "150px",
-      height: "auto",
-    },
-
-    logoSmall: {
-      maxWidth: "120px",
-      height: "auto",
-      marginBottom: "14px",
-    },
-
-    loadingPage: {
-      minHeight: "100vh",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      background: bg,
-      color: text,
-      fontFamily: "Georgia, serif",
-    },
-
-    loginPage: {
-      minHeight: "100vh",
-      background: `linear-gradient(135deg, ${bg}, ${bg2})`,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontFamily: "Georgia, serif",
-      padding: "24px",
-      color: text,
-    },
-
-    loginCard: {
-      background: cardBg,
-      padding: "32px",
-      borderRadius: "28px",
-      maxWidth: "420px",
-      width: "100%",
-      boxShadow: "0 20px 50px rgba(0,0,0,0.14)",
-      color: text,
-    },
-
-    loginTitle: {
-      fontSize: "32px",
-      marginBottom: "10px",
-      fontWeight: 400,
-      color: text,
-    },
-
-    mainPage: {
-      minHeight: "100vh",
-      padding: "24px",
-      fontFamily: "Georgia, serif",
-      background: `linear-gradient(135deg, ${bg}, ${bg2})`,
-      color: text,
-      overflowX: "hidden" as const,
-    },
-
-    headerStyle: {
-      display: "flex",
-      flexDirection: "column" as const,
-      alignItems: "flex-start",
-      gap: "18px",
-      marginBottom: "28px",
-      color: text,
-    },
-
-    title: {
-      fontSize: "34px",
-      marginBottom: "8px",
-      fontWeight: 400,
-      color: text,
-    },
-
-    subtitle: {
-      fontSize: "16px",
-      color: muted,
-      lineHeight: 1.5,
-    },
-
-    sectionTitle: {
-      fontSize: "30px",
-      marginBottom: "18px",
-      color: text,
-      fontWeight: 400,
-    },
-
-    clientTitle: {
-      fontSize: "25px",
-      marginBottom: "10px",
-      color: text,
-      fontWeight: 400,
-    },
-
-    muted: {
-      color: muted,
-      marginBottom: "18px",
-      lineHeight: 1.6,
-    },
-
-    statsGrid: {
-      display: "grid",
-      gridTemplateColumns: "1fr",
-      gap: "18px",
-      marginBottom: "30px",
-    },
-
-    photoGrid: {
-      display: "grid",
-      gridTemplateColumns: "1fr",
-      gap: "18px",
-    },
-
-    inputStyle: {
-      width: "100%",
-      boxSizing: "border-box" as const,
-      padding: "15px",
-      borderRadius: "18px",
-      border: `1px solid ${border}`,
-      fontSize: "16px",
-      display: "block",
-      marginBottom: "14px",
-      background: inputBg,
-      color: text,
-      outline: "none",
-    },
-
-    blackButton: {
-      padding: "14px 24px",
-      background: isDark ? "#f8f1e7" : "#111",
-      color: isDark ? "#111" : "#fff",
-      border: "none",
-      borderRadius: "30px",
-      cursor: "pointer",
-      fontSize: "16px",
-      marginRight: "10px",
-      marginBottom: "10px",
-    },
-
-    whatsappButton: {
-      padding: "14px 24px",
-      background: "#25D366",
-      color: "#fff",
-      border: "none",
-      borderRadius: "30px",
-      cursor: "pointer",
-      fontSize: "16px",
-      marginBottom: "10px",
-    },
-
-    lightButton: {
-      padding: "12px 20px",
-      background: inputBg,
-      color: text,
-      border: `1px solid ${border}`,
-      borderRadius: "30px",
-      cursor: "pointer",
-      fontSize: "15px",
-    },
-
-    card: {
-      background: cardBg,
-      padding: "24px",
-      borderRadius: "28px",
-      marginBottom: "28px",
-      boxShadow: "0 14px 35px rgba(0,0,0,0.10)",
-      color: text,
-    },
-
-    statCard: {
-      background: cardBg,
-      padding: "24px",
-      borderRadius: "24px",
-      boxShadow: "0 12px 30px rgba(0,0,0,0.10)",
-      color: text,
-    },
-
-    photoCard: {
-      background: isDark ? "#1c1510" : "#fffaf3",
-      padding: "14px",
-      borderRadius: "22px",
-      color: text,
-    },
-
-    photoImage: {
-      width: "100%",
-      height: "auto",
-      maxHeight: "430px",
-      objectFit: "contain" as const,
-      borderRadius: "18px",
-      marginBottom: "10px",
-      background: "#111",
-    },
-
-    photoText: {
-      fontSize: "13px",
-      wordBreak: "break-all" as const,
-      color: muted,
-    },
-  };
-}
+const styles = {
+  page: { minHeight: "100vh", padding: "28px", fontFamily: "Georgia, 'Times New Roman', serif", background: "linear-gradient(135deg, #f8f1e7, #efe0cb)", color: "#2b2118" },
+  loadingPage: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8f1e7", fontFamily: "Georgia, serif" },
+  loginPage: { minHeight: "100vh", background: "linear-gradient(135deg, #f8f1e7, #efe0cb)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", fontFamily: "Georgia, serif" },
+  loginCard: { width: "100%", maxWidth: "420px", background: "#fffaf3", border: "1px solid #ddcdb8", borderRadius: "28px", padding: "32px", boxShadow: "0 20px 45px rgba(0,0,0,0.12)", textAlign: "center" as const },
+  logo: { width: "90px", height: "auto", marginBottom: "16px" },
+  logoSmall: { width: "72px", height: "72px", objectFit: "contain" as const },
+  header: { maxWidth: "1200px", margin: "0 auto 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "20px" },
+  brandArea: { display: "flex", alignItems: "center", gap: "18px" },
+  title: { fontSize: "38px", lineHeight: 1, margin: 0, fontWeight: 500 },
+  loginTitle: { fontSize: "32px", marginBottom: "8px", fontWeight: 500 },
+  subtitle: { margin: "8px 0 0", color: "#5f5144", fontSize: "15px" },
+  muted: { color: "#5f5144", fontSize: "14px", lineHeight: 1.5 },
+  logoutButton: { padding: "13px 25px", borderRadius: "30px", border: "1px solid #d6c5ad", background: "#fffaf3", cursor: "pointer", fontSize: "15px" },
+  statsGrid: { maxWidth: "1200px", margin: "0 auto 24px", display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "18px" },
+  statCard: { background: "rgba(255,250,243,0.9)", border: "1px solid #ddcdb8", borderRadius: "18px", padding: "22px", boxShadow: "0 8px 24px rgba(0,0,0,0.06)" },
+  statLabel: { margin: "0 0 8px", color: "#5f5144", fontSize: "14px" },
+  statNumber: { fontSize: "28px", color: "#2b2118" },
+  statText: { fontSize: "18px", color: "#2b2118" },
+  online: { fontSize: "20px", color: "#1c7c35" },
+  topGrid: { maxWidth: "1200px", margin: "0 auto 26px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "22px" },
+  card: { background: "rgba(255,250,243,0.92)", border: "1px solid #ddcdb8", borderRadius: "20px", padding: "22px", boxShadow: "0 10px 25px rgba(0,0,0,0.06)" },
+  sectionTitle: { fontSize: "22px", margin: "0 0 12px", fontWeight: 500 },
+  sectionTitleBig: { maxWidth: "1200px", margin: "0 auto 14px", fontSize: "26px", fontWeight: 500 },
+  input: { width: "100%", boxSizing: "border-box" as const, padding: "13px 15px", borderRadius: "10px", border: "1px solid #d6c5ad", background: "#fffaf3", color: "#2b2118", marginBottom: "12px", fontSize: "14px", outline: "none" },
+  searchInput: { width: "100%", maxWidth: "650px", display: "block", boxSizing: "border-box" as const, margin: "0 auto 18px", padding: "15px", borderRadius: "12px", border: "1px solid #d6c5ad", background: "#fffaf3", color: "#2b2118", fontSize: "15px", outline: "none" },
+  small: { fontSize: "13px", color: "#5f5144", marginBottom: "14px" },
+  blackButton: { padding: "13px 22px", background: "#2b1811", color: "#fff", border: "none", borderRadius: "10px", cursor: "pointer", fontSize: "14px" },
+  whatsappButton: { marginTop: "12px", padding: "13px 22px", background: "#2f8b43", color: "#fff", border: "none", borderRadius: "10px", cursor: "pointer", fontSize: "14px" },
+  success: { color: "#2f6f3e", marginTop: "12px" },
+  linkBox: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", border: "1px solid #d6c5ad", borderRadius: "10px", padding: "8px", background: "#fffaf3" },
+  linkText: { fontSize: "13px", color: "#5f5144", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const },
+  copyButton: { flexShrink: 0, padding: "10px 14px", background: "#fffaf3", border: "1px solid #d6c5ad", borderRadius: "8px", cursor: "pointer" },
+  clientsList: { maxWidth: "1200px", margin: "0 auto", display: "grid", gap: "22px" },
+  clientCard: { background: "rgba(255,250,243,0.95)", border: "1px solid #ddcdb8", borderRadius: "20px", padding: "20px", boxShadow: "0 10px 25px rgba(0,0,0,0.06)" },
+  clientTop: { display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "flex-start", marginBottom: "16px" },
+  clientName: { fontSize: "25px", margin: "0 0 5px", fontWeight: 500 },
+  clientCount: { margin: 0, color: "#5f5144", fontSize: "14px" },
+  deleteButton: { padding: "10px 14px", borderRadius: "10px", border: "1px solid #e2b8b8", background: "#fffaf3", color: "#9b2525", cursor: "pointer", fontSize: "14px" },
+  photoGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: "12px" },
+  thumbButton: { border: "none", padding: 0, background: "transparent", cursor: "pointer", borderRadius: "10px", overflow: "hidden", height: "118px" },
+  thumbImage: { width: "100%", height: "118px", objectFit: "cover" as const, display: "block", borderRadius: "10px", background: "#111" },
+  modalOverlay: { position: "fixed" as const, inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 9999, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "20px" },
+  modalContent: { position: "relative" as const, width: "100%", maxWidth: "1180px", height: "520px", background: "#111", borderRadius: "22px", overflow: "hidden", boxShadow: "0 25px 60px rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" },
+  modalInfo: { position: "absolute" as const, top: "24px", left: "28px", zIndex: 3, color: "#fff", display: "grid", gap: "6px", fontSize: "17px" },
+  closeButton: { position: "absolute" as const, top: "22px", right: "24px", zIndex: 4, background: "transparent", color: "#fff", border: "none", fontSize: "38px", cursor: "pointer" },
+  modalImage: { width: "100%", height: "100%", objectFit: "contain" as const, display: "block" },
+  arrowLeft: { position: "absolute" as const, left: "26px", top: "50%", transform: "translateY(-50%)", zIndex: 4, width: "56px", height: "56px", borderRadius: "50%", border: "1px solid rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.12)", color: "#fff", fontSize: "42px", cursor: "pointer" },
+  arrowRight: { position: "absolute" as const, right: "26px", top: "50%", transform: "translateY(-50%)", zIndex: 4, width: "56px", height: "56px", borderRadius: "50%", border: "1px solid rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.12)", color: "#fff", fontSize: "42px", cursor: "pointer" },
+  modalBottom: { position: "absolute" as const, bottom: "26px", left: "50%", transform: "translateX(-50%)", zIndex: 4, display: "flex", gap: "12px" },
+  downloadModal: { padding: "13px 18px", borderRadius: "30px", border: "none", background: "rgba(255,255,255,0.18)", color: "#fff", cursor: "pointer", fontSize: "15px" },
+  heartModal: { width: "48px", height: "48px", borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.18)", color: "#fff", cursor: "pointer", fontSize: "24px" },
+};
