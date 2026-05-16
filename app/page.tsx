@@ -22,8 +22,8 @@ export default function Home() {
 
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [editedPhotos, setEditedPhotos] = useState<Photo[]>([]);
-
   const [selected, setSelected] = useState<string[]>([]);
+
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingPhotos, setLoadingPhotos] = useState(true);
@@ -46,9 +46,7 @@ export default function Home() {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        const first = entries[0];
-
-        if (first.isIntersecting) {
+        if (entries[0].isIntersecting) {
           setVisibleCount((prev) =>
             Math.min(prev + PHOTOS_PER_LOAD, photos.length)
           );
@@ -79,21 +77,27 @@ export default function Home() {
       .from("client_sessions")
       .select("*")
       .eq("client_name", cleanName)
-      .single();
+      .maybeSingle();
+
+    let currentStatus: SessionStatus = "escolher_fotografias";
 
     if (session?.status) {
-      setStatus(session.status as SessionStatus);
+      currentStatus = session.status as SessionStatus;
     } else {
       await supabase.from("client_sessions").upsert({
         client_name: cleanName,
         status: "escolher_fotografias",
+        downloaded_at: null,
         updated_at: new Date().toISOString(),
       });
-
-      setStatus("escolher_fotografias");
     }
 
-    if (session?.status === "fotos_disponiveis") {
+    setStatus(currentStatus);
+
+    if (
+      currentStatus === "fotos_disponiveis" ||
+      currentStatus === "encerrado"
+    ) {
       await fetchEditedPhotos(cleanName);
     } else {
       await fetchPreviewPhotos(cleanName);
@@ -200,22 +204,23 @@ export default function Home() {
 
     const cleanName = normalizeName(cliente);
 
-    for (const photo of selected) {
-      const { error } = await supabase.from("selections").insert({
-        client_name: cleanName,
-        photo_name: photo,
-      });
+    const rows = selected.map((photo) => ({
+      client_name: cleanName,
+      photo_name: photo,
+    }));
 
-      if (error) {
-        alert("Erro ao enviar: " + error.message);
-        setLoading(false);
-        return;
-      }
+    const { error } = await supabase.from("selections").insert(rows);
+
+    if (error) {
+      alert("Erro ao enviar: " + error.message);
+      setLoading(false);
+      return;
     }
 
     await supabase.from("client_sessions").upsert({
       client_name: cleanName,
       status: "aguardando_edicao",
+      downloaded_at: null,
       updated_at: new Date().toISOString(),
     });
 
