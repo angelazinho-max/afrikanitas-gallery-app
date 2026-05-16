@@ -28,8 +28,6 @@ export default function AdminPage() {
 
   const [activePhotos, setActivePhotos] = useState<Selection[]>([]);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
-
-  const [deletedClients, setDeletedClients] = useState<string[]>([]);
   const [favoritePhotos, setFavoritePhotos] = useState<string[]>([]);
 
   const cleanClientName = clientName.trim().toLowerCase().replace(/\s+/g, "-");
@@ -45,12 +43,7 @@ export default function AdminPage() {
     : "";
 
   useEffect(() => {
-    const savedDeletedClients = localStorage.getItem("deletedClients");
     const savedFavorites = localStorage.getItem("favoritePhotos");
-
-    if (savedDeletedClients) {
-      setDeletedClients(JSON.parse(savedDeletedClients));
-    }
 
     if (savedFavorites) {
       setFavoritePhotos(JSON.parse(savedFavorites));
@@ -78,6 +71,7 @@ export default function AdminPage() {
 
   const checkSession = async () => {
     const { data } = await supabase.auth.getSession();
+
     setSession(data.session);
     setLoading(false);
 
@@ -180,6 +174,33 @@ export default function AdminPage() {
     alert("Cliente apagada com sucesso.");
   };
 
+  const getCleanPhotoName = (photoUrl: string) => {
+    const decoded = decodeURIComponent(photoUrl);
+    const fileName = decoded.split("/").pop()?.split("?")[0] || "";
+
+    return fileName.replace(/^\d+-/, "");
+  };
+
+  const convertToRawName = (photoUrl: string) => {
+    const cleanName = getCleanPhotoName(photoUrl);
+    return cleanName.replace(/\.(jpg|jpeg|png|webp)$/i, ".CR3");
+  };
+
+  const exportRawNames = (client: string, photos: Selection[]) => {
+    const rawNames = photos.map((photo) => convertToRawName(photo.photo_name));
+    const content = rawNames.join("\n");
+
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${client}-fotos-raw.txt`;
+    link.click();
+
+    URL.revokeObjectURL(url);
+  };
+
   const openPhoto = (photos: Selection[], index: number) => {
     setActivePhotos(photos);
     setActiveIndex(index);
@@ -208,32 +229,7 @@ export default function AdminPage() {
     setFavoritePhotos(updated);
     localStorage.setItem("favoritePhotos", JSON.stringify(updated));
   };
-const getCleanPhotoName = (photoUrl: string) => {
-  const decoded = decodeURIComponent(photoUrl);
-  const fileName = decoded.split("/").pop()?.split("?")[0] || "";
 
-  return fileName.replace(/^\d+-/, "");
-};
-
-const convertToRawName = (photoUrl: string) => {
-  const cleanName = getCleanPhotoName(photoUrl);
-  return cleanName.replace(/\.(jpg|jpeg|png|webp)$/i, ".CR3");
-};
-
-const exportRawNames = (client: string, photos: Selection[]) => {
-  const rawNames = photos.map((photo) => convertToRawName(photo.photo_name));
-
-  const content = rawNames.join("\n");
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `${client}-fotos-raw.txt`;
-  link.click();
-
-  URL.revokeObjectURL(url);
-};
   const whatsappText = encodeURIComponent(
     `Olá ${clientName}, tudo bem? 😃\n\nA sua galeria Afrikanitas Studio já está pronta, por favor escolha as suas fotos favoritas. As fotografias escolhidas serão editadas com todo o cuidado e carinho pela nossa equipa.\n\nClique no link abaixo para escolher as suas fotografias favoritas:\n\n${clientLink}\n\nEste link expira em 72 horas.\n\nCom carinho,\nAfrikanitas Studio`
   );
@@ -287,10 +283,25 @@ const exportRawNames = (client: string, photos: Selection[]) => {
           <h1 style={styles.loginTitle}>Afrikanitas Studio</h1>
           <p style={styles.muted}>Área privada do administrador.</p>
 
-          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} style={styles.input} />
-          <input type="password" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} style={styles.input} />
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={styles.input}
+          />
 
-          <button onClick={login} style={styles.blackButton}>Entrar</button>
+          <input
+            type="password"
+            placeholder="Senha"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={styles.input}
+          />
+
+          <button onClick={login} style={styles.blackButton}>
+            Entrar
+          </button>
         </section>
       </main>
     );
@@ -299,30 +310,62 @@ const exportRawNames = (client: string, photos: Selection[]) => {
   return (
     <main style={styles.page}>
       <header style={styles.header}>
-        <div style={styles.brandArea}>
-          <img src="/logo.png" alt="Afrikanitas Studio" style={styles.logoSmall} />
-          <div>
-            <h1 style={styles.title}>Estúdio Afrikanitas</h1>
-            <p style={styles.subtitle}>Painel premium de clientes, galerias e fotografias escolhidas.</p>
-          </div>
+        <div>
+          <h1 style={styles.title}>Estúdio Afrikanitas</h1>
+          <p style={styles.subtitle}>
+            Painel premium de clientes, galerias e fotografias escolhidas.
+          </p>
         </div>
-        <button onClick={logout} style={styles.logoutButton}>Sair</button>
+
+        <button onClick={logout} style={styles.logoutButton}>
+          Sair
+        </button>
       </header>
 
       <section style={styles.statsGrid}>
-        <div style={styles.statCard}><p style={styles.statLabel}>Total de clientes</p><strong style={styles.statNumber}>{totalClients}</strong></div>
-        <div style={styles.statCard}><p style={styles.statLabel}>Fotos selecionadas</p><strong style={styles.statNumber}>{totalPhotos}</strong></div>
-        <div style={styles.statCard}><p style={styles.statLabel}>Status</p><strong style={styles.online}>Online</strong></div>
-        <div style={styles.statCard}><p style={styles.statLabel}>Última atualização</p><strong style={styles.statText}>Agora há pouco</strong></div>
+        <div style={styles.statCard}>
+          <p style={styles.statLabel}>Total de clientes</p>
+          <strong style={styles.statNumber}>{totalClients}</strong>
+        </div>
+
+        <div style={styles.statCard}>
+          <p style={styles.statLabel}>Fotos selecionadas</p>
+          <strong style={styles.statNumber}>{totalPhotos}</strong>
+        </div>
+
+        <div style={styles.statCard}>
+          <p style={styles.statLabel}>Status</p>
+          <strong style={styles.online}>Online</strong>
+        </div>
+
+        <div style={styles.statCard}>
+          <p style={styles.statLabel}>Última atualização</p>
+          <strong style={styles.statText}>Agora há pouco</strong>
+        </div>
       </section>
 
       <section style={styles.topGrid}>
         <div style={styles.card}>
           <h2 style={styles.sectionTitle}>Carregar fotografias</h2>
-          <p style={styles.muted}>Escreva o nome da cliente e carregue as fotografias.</p>
+          <p style={styles.muted}>
+            Escreva o nome da cliente e carregue as fotografias.
+          </p>
 
-          <input type="text" placeholder="Nome da cliente" value={clientName} onChange={(e) => setClientName(e.target.value)} style={styles.input} />
-          <input type="file" multiple accept="image/*" onChange={uploadPhotos} style={styles.input} />
+          <input
+            type="text"
+            placeholder="Nome da cliente"
+            value={clientName}
+            onChange={(e) => setClientName(e.target.value)}
+            style={styles.input}
+          />
+
+          <input
+            type="file"
+            multiple
+            accept="image/*"
+            onChange={uploadPhotos}
+            style={styles.input}
+          />
 
           <p style={styles.small}>Formatos aceites: JPG, JPEG, PNG, WEBP</p>
 
@@ -336,12 +379,30 @@ const exportRawNames = (client: string, photos: Selection[]) => {
         <div style={styles.card}>
           <h2 style={styles.sectionTitle}>Gerar link da cliente</h2>
 
-          <input type="text" placeholder="Nome da cliente" value={clientName} onChange={(e) => setClientName(e.target.value)} style={styles.input} />
-          <input type="text" placeholder="WhatsApp da cliente. Ex: 244923000000" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} style={styles.input} />
+          <input
+            type="text"
+            placeholder="Nome da cliente"
+            value={clientName}
+            onChange={(e) => setClientName(e.target.value)}
+            style={styles.input}
+          />
+
+          <input
+            type="text"
+            placeholder="WhatsApp da cliente. Ex: 244923000000"
+            value={whatsapp}
+            onChange={(e) => setWhatsapp(e.target.value)}
+            style={styles.input}
+          />
 
           <div style={styles.linkBox}>
-            <span style={styles.linkText}>{clientLink || "Link da galeria será gerado aqui"}</span>
-            <button onClick={copyLink} style={styles.copyButton}>{copied ? "Copiado" : "Copiar link"}</button>
+            <span style={styles.linkText}>
+              {clientLink || "Link da galeria será gerado aqui"}
+            </span>
+
+            <button onClick={copyLink} style={styles.copyButton}>
+              {copied ? "Copiado" : "Copiar link"}
+            </button>
           </div>
 
           {whatsappLink && (
@@ -355,9 +416,17 @@ const exportRawNames = (client: string, photos: Selection[]) => {
       <section>
         <h2 style={styles.sectionTitleBig}>Seleções por cliente</h2>
 
-        <input type="text" placeholder="Filtrar cliente automaticamente..." value={filter} onChange={(e) => setFilter(e.target.value)} style={styles.searchInput} />
+        <input
+          type="text"
+          placeholder="Filtrar cliente automaticamente..."
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          style={styles.searchInput}
+        />
 
-        {filteredGroups.length === 0 && <p style={styles.muted}>Ainda não há seleções.</p>}
+        {filteredGroups.length === 0 && (
+          <p style={styles.muted}>Ainda não há seleções.</p>
+        )}
 
         <div style={styles.clientsList}>
           {filteredGroups.map(([client, photos]) => (
@@ -365,32 +434,42 @@ const exportRawNames = (client: string, photos: Selection[]) => {
               <div style={styles.clientTop}>
                 <div>
                   <h3 style={styles.clientName}>{client}</h3>
-                  <p style={styles.clientCount}>{photos.length} fotografia(s) selecionada(s)</p>
+                  <p style={styles.clientCount}>
+                    {photos.length} fotografia(s) selecionada(s)
+                  </p>
                 </div>
- <div style={styles.clientActions}>
-  <button
-    onClick={() => exportRawNames(client, photos)}
-    style={styles.rawButton}
-  >
-    Exportar RAW
-  </button>
 
-  <div style={styles.clientActions}>
-  <button
-    onClick={() => exportRawNames(client, photos)}
-    style={styles.rawButton}
-  >
-    Exportar RAW
-  </button>
+                <div style={styles.clientActions}>
+                  <button
+                    onClick={() => exportRawNames(client, photos)}
+                    style={styles.rawButton}
+                  >
+                    Exportar RAW
+                  </button>
 
-  <button onClick={() => deleteClient(client)} style={styles.deleteButton}>
-    Apagar cliente
-  </button>
-</div>
+                  <button
+                    onClick={() => deleteClient(client)}
+                    style={styles.deleteButton}
+                  >
+                    Apagar cliente
+                  </button>
+                </div>
+              </div>
+
               <div style={styles.photoGrid}>
                 {photos.map((item, index) => (
-                  <button key={item.id} style={styles.thumbButton} onClick={() => openPhoto(photos, index)}>
-                    <img src={item.photo_name} alt="Foto escolhida" style={styles.thumbImage} loading="lazy" decoding="async" />
+                  <button
+                    key={item.id}
+                    style={styles.thumbButton}
+                    onClick={() => openPhoto(photos, index)}
+                  >
+                    <img
+                      src={item.photo_name}
+                      alt="Foto escolhida"
+                      style={styles.thumbImage}
+                      loading="lazy"
+                      decoding="async"
+                    />
                   </button>
                 ))}
               </div>
@@ -404,23 +483,44 @@ const exportRawNames = (client: string, photos: Selection[]) => {
           <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalInfo}>
               <strong>{activePhoto.client_name}</strong>
-              <span>{activeIndex! + 1} / {activePhotos.length}</span>
+              <span>
+                {activeIndex! + 1} / {activePhotos.length}
+              </span>
             </div>
 
-            <button style={styles.closeButton} onClick={closePhoto}>×</button>
-            <button style={styles.arrowLeft} onClick={previousPhoto}>‹</button>
+            <button style={styles.closeButton} onClick={closePhoto}>
+              ×
+            </button>
 
-            <img src={activePhoto.photo_name} alt="Foto ampliada" style={styles.modalImage} />
+            <button style={styles.arrowLeft} onClick={previousPhoto}>
+              ‹
+            </button>
 
-            <button style={styles.arrowRight} onClick={nextPhoto}>›</button>
+            <img
+              src={activePhoto.photo_name}
+              alt="Foto ampliada"
+              style={styles.modalImage}
+            />
+
+            <button style={styles.arrowRight} onClick={nextPhoto}>
+              ›
+            </button>
 
             <div style={styles.modalBottom}>
-              <a href={activePhoto.photo_name} download target="_blank" style={{ textDecoration: "none" }}>
+              <a
+                href={activePhoto.photo_name}
+                download
+                target="_blank"
+                style={{ textDecoration: "none" }}
+              >
                 <button style={styles.downloadModal}>Baixar foto</button>
               </a>
 
-              <button onClick={() => toggleFavorite(activePhoto.photo_name)} style={styles.heartModal}>
-                {favoritePhotos.includes(activePhoto.photo_name) ? "♥" : "♡"}
+              <button
+                onClick={() => toggleFavorite(activePhoto.photo_name)}
+                style={styles.heartModal}
+              >
+                {favoritePhotos.includes(activePhoto.photo_name) ? "♥️" : "♡"}
               </button>
             </div>
           </div>
@@ -430,30 +530,12 @@ const exportRawNames = (client: string, photos: Selection[]) => {
   );
 }
 
-const styles = {clientActions: {
-  display: "flex",
-  gap: "10px",
-  flexWrap: "wrap" as const,
-  justifyContent: "flex-end",
-},
-
-rawButton: {
-  padding: "10px 14px",
-  borderRadius: "10px",
-  border: "1px solid #2b1811",
-  background: "#2b1811",
-  color: "#fff",
-  cursor: "pointer",
-  fontSize: "14px",
-},
+const styles = {
   page: { minHeight: "100vh", padding: "28px", fontFamily: "Georgia, 'Times New Roman', serif", background: "linear-gradient(135deg, #f8f1e7, #efe0cb)", color: "#2b2118" },
   loadingPage: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8f1e7", fontFamily: "Georgia, serif" },
   loginPage: { minHeight: "100vh", background: "linear-gradient(135deg, #f8f1e7, #efe0cb)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", fontFamily: "Georgia, serif" },
   loginCard: { width: "100%", maxWidth: "420px", background: "#fffaf3", border: "1px solid #ddcdb8", borderRadius: "28px", padding: "32px", boxShadow: "0 20px 45px rgba(0,0,0,0.12)", textAlign: "center" as const },
-  logo: { width: "90px", height: "auto", marginBottom: "16px" },
-  logoSmall: { width: "72px", height: "72px", objectFit: "contain" as const },
   header: { maxWidth: "1200px", margin: "0 auto 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "20px" },
-  brandArea: { display: "flex", alignItems: "center", gap: "18px" },
   title: { fontSize: "38px", lineHeight: 1, margin: 0, fontWeight: 500 },
   loginTitle: { fontSize: "32px", marginBottom: "8px", fontWeight: 500 },
   subtitle: { margin: "8px 0 0", color: "#5f5144", fontSize: "15px" },
@@ -483,6 +565,8 @@ rawButton: {
   clientTop: { display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "flex-start", marginBottom: "16px" },
   clientName: { fontSize: "25px", margin: "0 0 5px", fontWeight: 500 },
   clientCount: { margin: 0, color: "#5f5144", fontSize: "14px" },
+  clientActions: { display: "flex", gap: "10px", flexWrap: "wrap" as const, justifyContent: "flex-end" },
+  rawButton: { padding: "10px 14px", borderRadius: "10px", border: "1px solid #2b1811", background: "#2b1811", color: "#fff", cursor: "pointer", fontSize: "14px" },
   deleteButton: { padding: "10px 14px", borderRadius: "10px", border: "1px solid #e2b8b8", background: "#fffaf3", color: "#9b2525", cursor: "pointer", fontSize: "14px" },
   photoGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: "12px" },
   thumbButton: { border: "none", padding: 0, background: "transparent", cursor: "pointer", borderRadius: "10px", overflow: "hidden", height: "118px" },
