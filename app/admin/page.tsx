@@ -36,12 +36,14 @@ export default function AdminPage() {
   const [uploadProgress, setUploadProgress] = useState("");
   const [uploadingFinalClient, setUploadingFinalClient] = useState("");
 
-  const cleanClientName = clientName
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, "-");
+  const cleanText = (text: string) =>
+    text
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+  const cleanClientName = cleanText(clientName).replace(/\s+/g, "-");
 
   const SITE_URL =
     process.env.NEXT_PUBLIC_SITE_URL ||
@@ -148,7 +150,6 @@ export default function AdminPage() {
     }
 
     const cleanPath = photoName.replace(/^\/+/, "");
-
     const { data } = supabase.storage.from("photos").getPublicUrl(cleanPath);
 
     return data.publicUrl;
@@ -165,7 +166,7 @@ export default function AdminPage() {
 
     if (current.status === "escolher_fotografias") return "Aguardando seleção";
     if (current.status === "aguardando_edicao") return "Aguardando edição";
-    if (current.status === "fotos_disponiveis") return "Fotos prontas para baixar";
+    if (current.status === "fotos_disponiveis") return "Fotos editadas enviadas";
     if (current.status === "encerrado") return "Sessão encerrada";
 
     return current.status;
@@ -183,18 +184,6 @@ export default function AdminPage() {
     return 25;
   };
 
-  const markAsReady = async (client: string) => {
-    await supabase.from("client_sessions").upsert({
-      client_name: client,
-      status: "fotos_disponiveis",
-      downloaded_at: null,
-      updated_at: new Date().toISOString(),
-    });
-
-    await fetchAll();
-    alert("Cliente marcada como fotos prontas para baixar.");
-  };
-
   const compressImage = (file: File): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -204,7 +193,7 @@ export default function AdminPage() {
 
       reader.onload = (event) => {
         if (!event.target?.result) {
-          reject();
+          reject(new Error("Não foi possível ler a imagem."));
           return;
         }
 
@@ -214,15 +203,20 @@ export default function AdminPage() {
       img.onload = () => {
         const canvas = document.createElement("canvas");
         const maxWidth = 1600;
-        const scale = maxWidth / img.width;
 
-        canvas.width = img.width > maxWidth ? maxWidth : img.width;
-        canvas.height = img.width > maxWidth ? img.height * scale : img.height;
+        if (img.width > maxWidth) {
+          const scale = maxWidth / img.width;
+          canvas.width = maxWidth;
+          canvas.height = Math.round(img.height * scale);
+        } else {
+          canvas.width = img.width;
+          canvas.height = img.height;
+        }
 
         const ctx = canvas.getContext("2d");
 
         if (!ctx) {
-          reject();
+          reject(new Error("Não foi possível preparar a imagem."));
           return;
         }
 
@@ -231,7 +225,7 @@ export default function AdminPage() {
         canvas.toBlob(
           (blob) => {
             if (!blob) {
-              reject();
+              reject(new Error("Não foi possível comprimir a imagem."));
               return;
             }
 
@@ -242,7 +236,7 @@ export default function AdminPage() {
         );
       };
 
-      img.onerror = reject;
+      img.onerror = () => reject(new Error("Imagem inválida."));
     });
   };
 
@@ -297,10 +291,12 @@ export default function AdminPage() {
         );
 
         const compressedFile = await compressImage(file);
+
         const safeName = file.name
           .replace(/\s+/g, "-")
           .replace(/[^\w.-]/g, "")
-          .toLowerCase();
+          .toLowerCase()
+          .replace(/\.(jpg|jpeg|png|webp)$/i, "");
 
         const previewPath = `${cleanClientName}/previews/${safeName}.webp`;
 
@@ -378,30 +374,13 @@ export default function AdminPage() {
       event.target.value = "";
       await fetchAll();
 
-      alert("Fotos editadas carregadas. A cliente já pode baixar no mesmo link.");
+      alert("Fotos editadas carregadas. Agora pode avisar a cliente pelo WhatsApp.");
     } catch (error) {
       console.log(error);
       alert("Erro ao carregar fotos editadas.");
     } finally {
       setUploadingFinalClient("");
     }
-  };
-
-  const closeSession = async (client: string) => {
-    const ok = confirm(`Deseja encerrar a sessão de "${client}"?`);
-    if (!ok) return;
-
-    await supabase
-      .from("client_sessions")
-      .update({
-        status: "encerrado",
-        downloaded_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("client_name", client);
-
-    await fetchAll();
-    alert("Sessão encerrada.");
   };
 
   const deleteClient = async (client: string) => {
@@ -431,7 +410,12 @@ export default function AdminPage() {
     return cleanName.replace(/\.(jpg|jpeg|png|webp)$/i, ".CR3");
   };
 
-  const exportRawNames = (client: string, photos: Selection[]) => {
+  const downloadSelectedPhotosList = (client: string, photos: Selection[]) => {
+    if (photos.length === 0) {
+      alert("Esta cliente ainda não selecionou fotografias.");
+      return;
+    }
+
     const rawNames = photos.map((photo) => convertToRawName(photo.photo_name));
     const content = rawNames.join("\n");
 
@@ -440,7 +424,7 @@ export default function AdminPage() {
 
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${client}-fotos-raw.txt`;
+    link.download = `${client}-fotos-selecionadas.txt`;
     link.click();
 
     URL.revokeObjectURL(url);
@@ -479,9 +463,9 @@ Afrikanitas Studio`
     const message = encodeURIComponent(
       `Olá, tudo bem? ✨
 
-As suas fotografias Afrikanitas Studio já estão prontas para baixar.
+As suas fotografias editadas da Afrikanitas Studio já estão disponíveis.
 
-Pode baixar as fotos editadas no mesmo link da sua galeria:
+Pode entrar no mesmo link da sua galeria e baixar as fotografias:
 
 ${getClientLink(client)}
 
@@ -506,13 +490,29 @@ Afrikanitas Studio`
     return groups;
   }, [selections]);
 
-  const filteredGroups = useMemo(() => {
-    return Object.entries(groupedSelections).filter(([client]) =>
-      client.toLowerCase().includes(filter.toLowerCase())
-    );
-  }, [groupedSelections, filter]);
+  const allClients = useMemo(() => {
+    const names = new Set<string>();
 
-  const totalClients = sessions.length;
+    sessions.forEach((item) => {
+      if (item.client_name) names.add(item.client_name);
+    });
+
+    selections.forEach((item) => {
+      if (item.client_name) names.add(item.client_name);
+    });
+
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [sessions, selections]);
+
+  const filteredClients = useMemo(() => {
+    const cleanFilter = cleanText(filter);
+
+    return allClients.filter((client) =>
+      cleanText(client).includes(cleanFilter)
+    );
+  }, [allClients, filter]);
+
+  const totalClients = allClients.length;
   const totalPhotos = selections.length;
 
   if (loading) {
@@ -588,7 +588,7 @@ Afrikanitas Studio`
         <div style={styles.card}>
           <h2 style={styles.sectionTitle}>Carregar fotografias</h2>
           <p style={styles.muted}>
-            Escreva o nome da cliente e carregue as fotografias.
+            Escreva o nome da cliente e carregue as fotografias para ela escolher.
           </p>
 
           <input
@@ -648,7 +648,7 @@ Afrikanitas Studio`
 
           {whatsappLink && (
             <a href={whatsappLink} target="_blank" style={{ textDecoration: "none" }}>
-              <button style={styles.whatsappButton}>Compartilhar WhatsApp</button>
+              <button style={styles.whatsappButton}>Enviar link no WhatsApp</button>
             </a>
           )}
         </div>
@@ -666,9 +666,12 @@ Afrikanitas Studio`
         />
 
         <div style={styles.clientsList}>
-          {filteredGroups.map(([client, photos]) => {
+          {filteredClients.map((client) => {
+            const photos = groupedSelections[client] || [];
             const progress = getProgress(client);
             const status = getSessionStatus(client);
+            const currentSession = getSession(client);
+            const canNotifyClient = currentSession?.status === "fotos_disponiveis";
 
             return (
               <div key={client} style={styles.clientCard}>
@@ -703,15 +706,15 @@ Afrikanitas Studio`
 
                   <div style={styles.clientActions}>
                     <button
-                      onClick={() => exportRawNames(client, photos)}
+                      onClick={() => downloadSelectedPhotosList(client, photos)}
                       style={styles.rawButton}
                     >
-                      Exportar RAW
+                      Baixar fotos selecionadas
                     </button>
 
                     <label style={styles.finalButton}>
                       {uploadingFinalClient === client
-                        ? "A carregar finais..."
+                        ? "A carregar editadas..."
                         : "Carregar fotos editadas"}
 
                       <input
@@ -725,29 +728,17 @@ Afrikanitas Studio`
                       />
                     </label>
 
-                    <button
-                      onClick={() => markAsReady(client)}
-                      style={styles.readyButton}
-                    >
-                      Fotos prontas para baixar
-                    </button>
-
-                    <a
-                      href={getReadyWhatsappLink(client)}
-                      target="_blank"
-                      style={{ textDecoration: "none" }}
-                    >
-                      <button style={styles.whatsappSmallButton}>
-                        Avisar cliente
-                      </button>
-                    </a>
-
-                    <button
-                      onClick={() => closeSession(client)}
-                      style={styles.closeSessionButton}
-                    >
-                      Encerrar sessão
-                    </button>
+                    {canNotifyClient && (
+                      <a
+                        href={getReadyWhatsappLink(client)}
+                        target="_blank"
+                        style={{ textDecoration: "none" }}
+                      >
+                        <button style={styles.whatsappSmallButton}>
+                          Avisar cliente no WhatsApp
+                        </button>
+                      </a>
+                    )}
 
                     <button
                       onClick={() => deleteClient(client)}
@@ -958,24 +949,6 @@ const styles = {
     borderRadius: "10px",
     border: "1px solid #1f8f4d",
     background: "#1f8f4d",
-    color: "#fff",
-    cursor: "pointer",
-    fontSize: "14px",
-  },
-  readyButton: {
-    padding: "10px 14px",
-    borderRadius: "10px",
-    border: "1px solid #b9822b",
-    background: "#b9822b",
-    color: "#fff",
-    cursor: "pointer",
-    fontSize: "14px",
-  },
-  closeSessionButton: {
-    padding: "10px 14px",
-    borderRadius: "10px",
-    border: "1px solid #111",
-    background: "#111",
     color: "#fff",
     cursor: "pointer",
     fontSize: "14px",
