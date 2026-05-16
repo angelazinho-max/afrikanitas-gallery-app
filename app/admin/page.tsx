@@ -34,7 +34,6 @@ export default function AdminPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
   const [uploadProgress, setUploadProgress] = useState("");
-
   const [uploadingFinalClient, setUploadingFinalClient] = useState("");
 
   const cleanClientName = clientName
@@ -137,6 +136,65 @@ export default function AdminPage() {
     setSession(null);
   };
 
+  const getClientLink = (client: string) => {
+    return `${SITE_URL}/?cliente=${client}`;
+  };
+
+  const getPhotoSrc = (photoName: string) => {
+    if (!photoName) return "";
+
+    if (photoName.startsWith("http")) {
+      return photoName;
+    }
+
+    const cleanPath = photoName.replace(/^\/+/, "");
+
+    const { data } = supabase.storage.from("photos").getPublicUrl(cleanPath);
+
+    return data.publicUrl;
+  };
+
+  const getSession = (client: string) => {
+    return sessions.find((item) => item.client_name === client);
+  };
+
+  const getSessionStatus = (client: string) => {
+    const current = getSession(client);
+
+    if (!current) return "Aguardando seleção";
+
+    if (current.status === "escolher_fotografias") return "Aguardando seleção";
+    if (current.status === "aguardando_edicao") return "Aguardando edição";
+    if (current.status === "fotos_disponiveis") return "Fotos prontas para baixar";
+    if (current.status === "encerrado") return "Sessão encerrada";
+
+    return current.status;
+  };
+
+  const getProgress = (client: string) => {
+    const current = getSession(client);
+
+    if (!current) return 25;
+    if (current.status === "escolher_fotografias") return 25;
+    if (current.status === "aguardando_edicao") return 55;
+    if (current.status === "fotos_disponiveis") return 85;
+    if (current.status === "encerrado") return 100;
+
+    return 25;
+  };
+
+  const markAsReady = async (client: string) => {
+    await supabase.from("client_sessions").upsert({
+      client_name: client,
+      status: "fotos_disponiveis",
+      downloaded_at: null,
+      updated_at: new Date().toISOString(),
+    });
+
+    await fetchAll();
+    alert("Cliente marcada como fotos prontas para baixar.");
+  };
+
   const compressImage = (file: File): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -180,7 +238,7 @@ export default function AdminPage() {
             resolve(blob);
           },
           "image/webp",
-          0.7
+          0.72
         );
       };
 
@@ -230,16 +288,20 @@ export default function AdminPage() {
       });
 
       const allFiles = Array.from(files);
-      let uploadedCount = 0;
 
-      for (const file of allFiles) {
+      for (let i = 0; i < allFiles.length; i++) {
+        const file = allFiles[i];
+
         setUploadProgress(
-          `A carregar ${uploadedCount + 1} de ${allFiles.length} fotografias...`
+          `A carregar ${i + 1} de ${allFiles.length} fotografias...`
         );
 
         const compressedFile = await compressImage(file);
+        const safeName = file.name
+          .replace(/\s+/g, "-")
+          .replace(/[^\w.-]/g, "")
+          .toLowerCase();
 
-        const safeName = file.name.replace(/\s+/g, "-").toLowerCase();
         const previewPath = `${cleanClientName}/previews/${safeName}.webp`;
 
         const { error } = await supabase.storage
@@ -255,14 +317,10 @@ export default function AdminPage() {
           return;
         }
 
-        uploadedCount++;
-
-        setUploadProgress(
-          `${uploadedCount} de ${allFiles.length} fotografias carregadas`
-        );
+        setUploadProgress(`${i + 1} de ${allFiles.length} fotografias carregadas`);
       }
 
-      setUploadMessage("Fotografias transmitidas com sucesso.");
+      setUploadMessage("Fotografias carregadas com sucesso.");
       setUploadProgress("");
       event.target.value = "";
 
@@ -291,12 +349,17 @@ export default function AdminPage() {
       const allFiles = Array.from(files);
 
       for (const file of allFiles) {
-        const safeName = file.name.replace(/\s+/g, "-").toLowerCase();
+        const safeName = file.name
+          .replace(/\s+/g, "-")
+          .replace(/[^\w.-]/g, "")
+          .toLowerCase();
+
         const path = `${client}/edited/${safeName}`;
 
         const { error } = await supabase.storage.from("photos").upload(path, file, {
           cacheControl: "31536000",
           upsert: true,
+          contentType: file.type || "image/jpeg",
         });
 
         if (error) {
@@ -308,6 +371,7 @@ export default function AdminPage() {
       await supabase.from("client_sessions").upsert({
         client_name: client,
         status: "fotos_disponiveis",
+        downloaded_at: null,
         updated_at: new Date().toISOString(),
       });
 
@@ -321,6 +385,23 @@ export default function AdminPage() {
     } finally {
       setUploadingFinalClient("");
     }
+  };
+
+  const closeSession = async (client: string) => {
+    const ok = confirm(`Deseja encerrar a sessão de "${client}"?`);
+    if (!ok) return;
+
+    await supabase
+      .from("client_sessions")
+      .update({
+        status: "encerrado",
+        downloaded_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("client_name", client);
+
+    await fetchAll();
+    alert("Sessão encerrada.");
   };
 
   const deleteClient = async (client: string) => {
@@ -347,7 +428,7 @@ export default function AdminPage() {
 
   const convertToRawName = (photoUrl: string) => {
     const cleanName = getCleanPhotoName(photoUrl);
-    return cleanName.replace(/\.(jpg|jpeg|png)$/i, ".CR3");
+    return cleanName.replace(/\.(jpg|jpeg|png|webp)$/i, ".CR3");
   };
 
   const exportRawNames = (client: string, photos: Selection[]) => {
@@ -394,6 +475,23 @@ Afrikanitas Studio`
       ? `https://wa.me/${whatsapp.replace(/\D/g, "")}?text=${whatsappText}`
       : "";
 
+  const getReadyWhatsappLink = (client: string) => {
+    const message = encodeURIComponent(
+      `Olá, tudo bem? ✨
+
+As suas fotografias Afrikanitas Studio já estão prontas para baixar.
+
+Pode baixar as fotos editadas no mesmo link da sua galeria:
+
+${getClientLink(client)}
+
+Com carinho,
+Afrikanitas Studio`
+    );
+
+    return `https://wa.me/?text=${message}`;
+  };
+
   const groupedSelections = useMemo(() => {
     const groups: Record<string, Selection[]> = {};
 
@@ -413,19 +511,6 @@ Afrikanitas Studio`
       client.toLowerCase().includes(filter.toLowerCase())
     );
   }, [groupedSelections, filter]);
-
-  const getSessionStatus = (client: string) => {
-    const current = sessions.find((item) => item.client_name === client);
-
-    if (!current) return "Aguardando seleção";
-
-    if (current.status === "escolher_fotografias") return "Aguardando seleção";
-    if (current.status === "aguardando_edicao") return "Fotos selecionadas";
-    if (current.status === "fotos_disponiveis") return "Fotos disponíveis";
-    if (current.status === "encerrado") return "Encerrado";
-
-    return current.status;
-  };
 
   const totalClients = sessions.length;
   const totalPhotos = selections.length;
@@ -503,7 +588,7 @@ Afrikanitas Studio`
         <div style={styles.card}>
           <h2 style={styles.sectionTitle}>Carregar fotografias</h2>
           <p style={styles.muted}>
-            Escreva o nome do cliente e carregue as fotografias.
+            Escreva o nome da cliente e carregue as fotografias.
           </p>
 
           <input
@@ -581,66 +666,113 @@ Afrikanitas Studio`
         />
 
         <div style={styles.clientsList}>
-          {filteredGroups.map(([client, photos]) => (
-            <div key={client} style={styles.clientCard}>
-              <div style={styles.clientTop}>
-                <div>
-                  <h3 style={styles.clientName}>{client}</h3>
-                  <p style={styles.clientCount}>
-                    {photos.length} fotografia(s) selecionada(s)
-                  </p>
-                  <p style={styles.clientCount}>
-                    Status: <strong>{getSessionStatus(client)}</strong>
-                  </p>
+          {filteredGroups.map(([client, photos]) => {
+            const progress = getProgress(client);
+            const status = getSessionStatus(client);
+
+            return (
+              <div key={client} style={styles.clientCard}>
+                <div style={styles.clientTop}>
+                  <div style={{ flex: 1 }}>
+                    <h3 style={styles.clientName}>{client}</h3>
+
+                    <p style={styles.clientCount}>
+                      {photos.length} fotografia(s) selecionada(s)
+                    </p>
+
+                    <p style={styles.clientCount}>
+                      Status: <strong>{status}</strong>
+                    </p>
+
+                    <div style={styles.progressArea}>
+                      <div style={styles.progressTop}>
+                        <span>Progresso da sessão</span>
+                        <strong>{progress}%</strong>
+                      </div>
+
+                      <div style={styles.progressBar}>
+                        <div
+                          style={{
+                            ...styles.progressFill,
+                            width: `${progress}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={styles.clientActions}>
+                    <button
+                      onClick={() => exportRawNames(client, photos)}
+                      style={styles.rawButton}
+                    >
+                      Exportar RAW
+                    </button>
+
+                    <label style={styles.finalButton}>
+                      {uploadingFinalClient === client
+                        ? "A carregar finais..."
+                        : "Carregar fotos editadas"}
+
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={(event) =>
+                          uploadEditedPhotosForClient(client, event)
+                        }
+                        style={{ display: "none" }}
+                      />
+                    </label>
+
+                    <button
+                      onClick={() => markAsReady(client)}
+                      style={styles.readyButton}
+                    >
+                      Fotos prontas para baixar
+                    </button>
+
+                    <a
+                      href={getReadyWhatsappLink(client)}
+                      target="_blank"
+                      style={{ textDecoration: "none" }}
+                    >
+                      <button style={styles.whatsappSmallButton}>
+                        Avisar cliente
+                      </button>
+                    </a>
+
+                    <button
+                      onClick={() => closeSession(client)}
+                      style={styles.closeSessionButton}
+                    >
+                      Encerrar sessão
+                    </button>
+
+                    <button
+                      onClick={() => deleteClient(client)}
+                      style={styles.deleteButton}
+                    >
+                      Apagar cliente
+                    </button>
+                  </div>
                 </div>
 
-                <div style={styles.clientActions}>
-                  <button
-                    onClick={() => exportRawNames(client, photos)}
-                    style={styles.rawButton}
-                  >
-                    Exportar RAW
-                  </button>
-
-                  <label style={styles.finalButton}>
-                    {uploadingFinalClient === client
-                      ? "A carregar finais..."
-                      : "Carregar fotos editadas"}
-
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      onChange={(event) =>
-                        uploadEditedPhotosForClient(client, event)
-                      }
-                      style={{ display: "none" }}
+                <div style={styles.photoGrid}>
+                  {photos.map((item) => (
+                    <img
+                      key={item.id}
+                      src={getPhotoSrc(item.photo_name)}
+                      alt="Foto escolhida"
+                      style={styles.thumbImage}
+                      loading="lazy"
+                      decoding="async"
                     />
-                  </label>
-
-                  <button
-                    onClick={() => deleteClient(client)}
-                    style={styles.deleteButton}
-                  >
-                    Apagar cliente
-                  </button>
+                  ))}
                 </div>
               </div>
-
-              <div style={styles.photoGrid}>
-                {photos.map((item) => (
-                  <img
-                    key={item.id}
-                    src={item.photo_name}
-                    alt="Foto escolhida"
-                    style={styles.thumbImage}
-                    loading="lazy"
-                    decoding="async"
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
     </main>
@@ -821,6 +953,33 @@ const styles = {
     cursor: "pointer",
     fontSize: "14px",
   },
+  whatsappSmallButton: {
+    padding: "10px 14px",
+    borderRadius: "10px",
+    border: "1px solid #1f8f4d",
+    background: "#1f8f4d",
+    color: "#fff",
+    cursor: "pointer",
+    fontSize: "14px",
+  },
+  readyButton: {
+    padding: "10px 14px",
+    borderRadius: "10px",
+    border: "1px solid #b9822b",
+    background: "#b9822b",
+    color: "#fff",
+    cursor: "pointer",
+    fontSize: "14px",
+  },
+  closeSessionButton: {
+    padding: "10px 14px",
+    borderRadius: "10px",
+    border: "1px solid #111",
+    background: "#111",
+    color: "#fff",
+    cursor: "pointer",
+    fontSize: "14px",
+  },
   success: {
     color: "#2f6f3e",
     marginTop: "12px",
@@ -881,6 +1040,30 @@ const styles = {
     color: "#5f5144",
     fontSize: "14px",
   },
+  progressArea: {
+    marginTop: "12px",
+    maxWidth: "420px",
+  },
+  progressTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    fontSize: "13px",
+    color: "#5f5144",
+    marginBottom: "6px",
+  },
+  progressBar: {
+    width: "100%",
+    height: "9px",
+    background: "#eadcc8",
+    borderRadius: "99px",
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    background: "#2f8b43",
+    borderRadius: "99px",
+    transition: "width 0.3s ease",
+  },
   clientActions: {
     display: "flex",
     gap: "10px",
@@ -916,15 +1099,16 @@ const styles = {
   },
   photoGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
     gap: "12px",
   },
   thumbImage: {
     width: "100%",
-    height: "118px",
-    objectFit: "cover" as const,
+    height: "150px",
+    objectFit: "contain" as const,
     display: "block",
-    borderRadius: "10px",
+    borderRadius: "12px",
     background: "#111",
+    border: "1px solid #e5d6c0",
   },
 };
