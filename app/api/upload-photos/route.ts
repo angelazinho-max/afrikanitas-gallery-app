@@ -1,87 +1,139 @@
-import { NextResponse } from "next/server";
-import sharp from "sharp";
-import { createClient } from "@supabase/supabase-js";
+const uploadPhotos = async (
+  event: React.ChangeEvent<HTMLInputElement>
+) => {
+  const files = event.target.files;
 
-export const runtime = "nodejs";
+  if (!files || files.length === 0) return;
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-const normalizeName = (name: string) =>
-  name
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, "-");
-
-export async function POST(request: Request) {
-  try {
-    const formData = await request.formData();
-
-    const cliente = String(formData.get("cliente") || "");
-    const files = formData.getAll("files") as File[];
-
-    if (!cliente) {
-      return NextResponse.json(
-        { error: "Nome do cliente em falta." },
-        { status: 400 }
-      );
-    }
-
-    if (!files.length) {
-      return NextResponse.json(
-        { error: "Nenhuma fotografia enviada." },
-        { status: 400 }
-      );
-    }
-
-    const folderName = normalizeName(cliente);
-
-    let uploaded = 0;
-
-    for (const file of files) {
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-
-      const originalPath = `${folderName}/originals/${file.name}`;
-      const previewPath = `${folderName}/previews/${file.name}.webp`;
-
-      await supabaseAdmin.storage.from("photos").upload(originalPath, buffer, {
-        contentType: file.type || "image/jpeg",
-        upsert: true,
-      });
-
-      const previewBuffer = await sharp(buffer)
-        .rotate()
-        .resize({
-          width: 1600,
-          withoutEnlargement: true,
-        })
-        .webp({
-          quality: 70,
-        })
-        .toBuffer();
-
-      await supabaseAdmin.storage.from("photos").upload(previewPath, previewBuffer, {
-        contentType: "image/webp",
-        upsert: true,
-      });
-
-      uploaded++;
-    }
-
-    return NextResponse.json({
-      success: true,
-      uploaded,
-      message: `${uploaded} fotografia(s) carregada(s) com sucesso.`,
-    });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Erro ao processar fotografias." },
-      { status: 500 }
-    );
+  if (!cleanClientName) {
+    alert("Escreva o nome da cliente antes de carregar as fotografias.");
+    return;
   }
-}
+
+  setUploading(true);
+  setUploadMessage("");
+  setUploadProgress("");
+
+  try {
+    const allFiles = Array.from(files);
+
+    let uploadedCount = 0;
+
+    for (const file of allFiles) {
+      setUploadProgress(
+        `A processar ${uploadedCount + 1} de ${allFiles.length} fotografias...`
+      );
+
+      const compressedFile = await compressImage(file);
+
+      const previewName = file.name
+        .replace(/\s+/g, "-")
+        .toLowerCase();
+
+      const previewPath = `${cleanClientName}/previews/${previewName}.webp`;
+
+      const { error } = await supabase.storage
+        .from("photos")
+        .upload(previewPath, compressedFile, {
+          cacheControl: "31536000",
+          upsert: true,
+          contentType: "image/webp",
+        });
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      uploadedCount++;
+
+      setUploadProgress(
+        `${uploadedCount} de ${allFiles.length} fotografias carregadas`
+      );
+    }
+
+    setUploadMessage(
+      `${allFiles.length} fotografia(s) carregada(s) com sucesso.`
+    );
+
+    setUploadProgress("");
+
+    event.target.value = "";
+  } catch (error) {
+    console.log(error);
+
+    alert("Erro ao carregar fotografias.");
+  } finally {
+    setUploading(false);
+  }
+};
+
+const compressImage = (file: File): Promise<Blob> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+
+    const reader = new FileReader();
+
+    reader.readAsDataURL(file);
+
+    reader.onload = (event) => {
+      if (!event.target?.result) {
+        reject();
+
+        return;
+      }
+
+      img.src = event.target.result as string;
+    };
+
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+
+      const maxWidth = 1600;
+
+      const scale = maxWidth / img.width;
+
+      canvas.width =
+        img.width > maxWidth
+          ? maxWidth
+          : img.width;
+
+      canvas.height =
+        img.width > maxWidth
+          ? img.height * scale
+          : img.height;
+
+      const ctx = canvas.getContext("2d");
+
+      if (!ctx) {
+        reject();
+
+        return;
+      }
+
+      ctx.drawImage(
+        img,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject();
+
+            return;
+          }
+
+          resolve(blob);
+        },
+        "image/webp",
+        0.7
+      );
+    };
+
+    img.onerror = reject;
+  });
+};
