@@ -208,7 +208,32 @@ export default function AdminPage() {
     setFavoritePhotos(updated);
     localStorage.setItem("favoritePhotos", JSON.stringify(updated));
   };
+const getCleanPhotoName = (photoUrl: string) => {
+  const decoded = decodeURIComponent(photoUrl);
+  const fileName = decoded.split("/").pop()?.split("?")[0] || "";
 
+  return fileName.replace(/^\d+-/, "");
+};
+
+const convertToRawName = (photoUrl: string) => {
+  const cleanName = getCleanPhotoName(photoUrl);
+  return cleanName.replace(/\.(jpg|jpeg|png|webp)$/i, ".CR3");
+};
+
+const exportRawNames = (client: string, photos: Selection[]) => {
+  const rawNames = photos.map((photo) => convertToRawName(photo.photo_name));
+
+  const content = rawNames.join("\n");
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${client}-fotos-raw.txt`;
+  link.click();
+
+  URL.revokeObjectURL(url);
+};
   const whatsappText = encodeURIComponent(
     `Olá ${clientName}, tudo bem? 😃\n\nA sua galeria Afrikanitas Studio já está pronta, por favor escolha as suas fotos favoritas. As fotografias escolhidas serão editadas com todo o cuidado e carinho pela nossa equipa.\n\nClique no link abaixo para escolher as suas fotografias favoritas:\n\n${clientLink}\n\nEste link expira em 72 horas.\n\nCom carinho,\nAfrikanitas Studio`
   );
@@ -259,7 +284,6 @@ export default function AdminPage() {
     return (
       <main style={styles.loginPage}>
         <section style={styles.loginCard}>
-          <img src="/logo.png" alt="Afrikanitas Studio" style={styles.logo} />
           <h1 style={styles.loginTitle}>Afrikanitas Studio</h1>
           <p style={styles.muted}>Área privada do administrador.</p>
 
@@ -343,9 +367,26 @@ export default function AdminPage() {
                   <h3 style={styles.clientName}>{client}</h3>
                   <p style={styles.clientCount}>{photos.length} fotografia(s) selecionada(s)</p>
                 </div>
-                <button onClick={() => deleteClient(client)} style={styles.deleteButton}>Apagar cliente</button>
-              </div>
+ <div style={styles.clientActions}>
+  <button
+    onClick={() => exportRawNames(client, photos)}
+    style={styles.rawButton}
+  >
+    Exportar RAW
+  </button>
 
+  <div style={styles.clientActions}>
+  <button
+    onClick={() => exportRawNames(client, photos)}
+    style={styles.rawButton}
+  >
+    Exportar RAW
+  </button>
+
+  <button onClick={() => deleteClient(client)} style={styles.deleteButton}>
+    Apagar cliente
+  </button>
+</div>
               <div style={styles.photoGrid}>
                 {photos.map((item, index) => (
                   <button key={item.id} style={styles.thumbButton} onClick={() => openPhoto(photos, index)}>
@@ -389,7 +430,22 @@ export default function AdminPage() {
   );
 }
 
-const styles = {
+const styles = {clientActions: {
+  display: "flex",
+  gap: "10px",
+  flexWrap: "wrap" as const,
+  justifyContent: "flex-end",
+},
+
+rawButton: {
+  padding: "10px 14px",
+  borderRadius: "10px",
+  border: "1px solid #2b1811",
+  background: "#2b1811",
+  color: "#fff",
+  cursor: "pointer",
+  fontSize: "14px",
+},
   page: { minHeight: "100vh", padding: "28px", fontFamily: "Georgia, 'Times New Roman', serif", background: "linear-gradient(135deg, #f8f1e7, #efe0cb)", color: "#2b2118" },
   loadingPage: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8f1e7", fontFamily: "Georgia, serif" },
   loginPage: { minHeight: "100vh", background: "linear-gradient(135deg, #f8f1e7, #efe0cb)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", fontFamily: "Georgia, serif" },
