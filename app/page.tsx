@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "./lib/supabase";
 
 type Photo = {
   name: string;
   url: string;
 };
+
+const PHOTOS_PER_LOAD = 20;
 
 export default function Home() {
   const [cliente, setCliente] = useState("Cliente sem nome");
@@ -16,6 +18,9 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [loadingPhotos, setLoadingPhotos] = useState(true);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PHOTOS_PER_LOAD);
+
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -23,6 +28,27 @@ export default function Home() {
     setCliente(clientFromUrl);
     fetchPhotos(clientFromUrl);
   }, []);
+
+  useEffect(() => {
+    if (!loadMoreRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+
+        if (first.isIntersecting) {
+          setVisibleCount((prev) =>
+            Math.min(prev + PHOTOS_PER_LOAD, photos.length)
+          );
+        }
+      },
+      { rootMargin: "300px" }
+    );
+
+    observer.observe(loadMoreRef.current);
+
+    return () => observer.disconnect();
+  }, [photos.length]);
 
   const normalizeName = (name: string) =>
     name
@@ -34,6 +60,7 @@ export default function Home() {
 
   const fetchPhotos = async (clientName: string) => {
     setLoadingPhotos(true);
+    setVisibleCount(PHOTOS_PER_LOAD);
 
     const namesToTry = Array.from(
       new Set([clientName, normalizeName(clientName)])
@@ -54,25 +81,27 @@ export default function Home() {
         continue;
       }
 
-      const photoList: Photo[] =
-        data
-          ?.filter(
-            (file) =>
-              file.name !== ".emptyFolderPlaceholder" &&
-              !file.name.startsWith(".")
-          )
-          .map((file) => {
-            const fullPath = `${folderName}/${file.name}`;
+      const files =
+        data?.filter(
+          (file) =>
+            file.name !== ".emptyFolderPlaceholder" &&
+            !file.name.startsWith(".")
+        ) || [];
 
-            const { data: publicUrl } = supabase.storage
-              .from("photos")
-              .getPublicUrl(fullPath);
+      const photoList: Photo[] = await Promise.all(
+        files.map(async (file) => {
+          const fullPath = `${folderName}/${file.name}`;
 
-            return {
-              name: file.name,
-              url: publicUrl.publicUrl,
-            };
-          }) || [];
+          const { data: signedUrl } = await supabase.storage
+            .from("photos")
+            .createSignedUrl(fullPath, 60 * 60);
+
+          return {
+            name: file.name,
+            url: signedUrl?.signedUrl || "",
+          };
+        })
+      );
 
       if (photoList.length > 0) {
         foundPhotos = photoList;
@@ -130,6 +159,8 @@ export default function Home() {
   };
 
   const activePhoto = activeIndex !== null ? photos[activeIndex] : null;
+  const visiblePhotos = photos.slice(0, visibleCount);
+  const hasMorePhotos = visibleCount < photos.length;
 
   return (
     <main style={page}>
@@ -148,6 +179,12 @@ export default function Home() {
         </p>
 
         <p style={counter}>{selected.length} fotografia(s) selecionada(s)</p>
+
+        {!loadingPhotos && photos.length > 0 && (
+          <p style={progressText}>
+            A mostrar {visiblePhotos.length} de {photos.length} fotografias
+          </p>
+        )}
       </section>
 
       {loadingPhotos && <p style={loadingText}>A carregar fotografias...</p>}
@@ -157,33 +194,46 @@ export default function Home() {
       )}
 
       {!loadingPhotos && photos.length > 0 && (
-        <section style={grid}>
-          {photos.map((photo, index) => {
-            const isSelected = selected.includes(photo.url);
+        <>
+          <section style={grid}>
+            {visiblePhotos.map((photo, index) => {
+              const isSelected = selected.includes(photo.url);
 
-            return (
-              <div key={photo.url} style={photoCard}>
-                <button
-                  onClick={() => togglePhoto(photo.url)}
-                  style={{
-                    ...heartButton,
-                    background: isSelected ? "#111" : "rgba(255,255,255,0.9)",
-                    color: isSelected ? "#fff" : "#111",
-                  }}
-                >
-                  ♥
-                </button>
+              return (
+                <div key={photo.url} style={photoCard}>
+                  <button
+                    onClick={() => togglePhoto(photo.url)}
+                    style={{
+                      ...heartButton,
+                      background: isSelected ? "#111" : "rgba(255,255,255,0.9)",
+                      color: isSelected ? "#fff" : "#111",
+                    }}
+                  >
+                    ♥
+                  </button>
 
-                <img
-                  src={photo.url}
-                  alt={photo.name}
-                  style={photoImage}
-                  onClick={() => setActiveIndex(index)}
-                />
-              </div>
-            );
-          })}
-        </section>
+                  <img
+                    src={photo.url}
+                    alt={photo.name}
+                    style={photoImage}
+                    onClick={() => setActiveIndex(index)}
+                    loading="lazy"
+                    decoding="async"
+                    fetchPriority={index < 6 ? "high" : "low"}
+                  />
+                </div>
+              );
+            })}
+          </section>
+
+          <div ref={loadMoreRef} style={loadMoreArea}>
+            {hasMorePhotos ? (
+              <p style={loadingText}>A carregar mais fotografias...</p>
+            ) : (
+              <p style={emptyText}>Todas as fotografias foram carregadas.</p>
+            )}
+          </div>
+        </>
       )}
 
       {success && <p style={successText}>Seleção enviada com sucesso ✨</p>}
@@ -203,7 +253,27 @@ export default function Home() {
               ‹
             </button>
 
-            <img src={activePhoto.url} alt={activePhoto.name} style={mainImage} />
+            <img
+              src={activePhoto.url}
+              alt={activePhoto.name}
+              style={mainImage}
+              decoding="async"
+            />
+
+            <button
+              onClick={() => togglePhoto(activePhoto.url)}
+              style={{
+                ...modalFavoriteButton,
+                background: selected.includes(activePhoto.url)
+                  ? "#111"
+                  : "rgba(255,255,255,0.95)",
+                color: selected.includes(activePhoto.url) ? "#fff" : "#111",
+              }}
+            >
+              {selected.includes(activePhoto.url)
+                ? "♥ Selecionada"
+                : "♡ Selecionar fotografia"}
+            </button>
 
             <button style={arrowRight} onClick={nextPhoto}>
               ›
@@ -265,6 +335,12 @@ const counter = {
   color: "GrayText",
 };
 
+const progressText = {
+  fontSize: "14px",
+  color: "GrayText",
+  marginTop: "8px",
+};
+
 const loadingText = {
   textAlign: "center" as const,
   color: "CanvasText",
@@ -311,6 +387,11 @@ const heartButton = {
   cursor: "pointer",
 };
 
+const loadMoreArea = {
+  minHeight: "80px",
+  padding: "24px 0",
+};
+
 const successText = {
   textAlign: "center" as const,
   color: "#2f8b43",
@@ -355,6 +436,21 @@ const mainImage = {
   maxHeight: "100%",
   objectFit: "contain" as const,
   borderRadius: "16px",
+};
+
+const modalFavoriteButton = {
+  position: "absolute" as const,
+  bottom: "68px",
+  left: "50%",
+  transform: "translateX(-50%)",
+  padding: "12px 22px",
+  borderRadius: "40px",
+  border: "none",
+  fontSize: "15px",
+  cursor: "pointer",
+  fontWeight: 500,
+  backdropFilter: "blur(10px)",
+  whiteSpace: "nowrap" as const,
 };
 
 const closeButton = {
