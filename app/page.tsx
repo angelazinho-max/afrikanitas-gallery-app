@@ -5,6 +5,7 @@ import { supabase } from "./lib/supabase";
 
 type Photo = {
   name: string;
+  path: string;
   url: string;
 };
 
@@ -40,6 +41,10 @@ export default function Home() {
     setCliente(clientFromUrl);
     initClient(clientFromUrl);
   }, []);
+
+  useEffect(() => {
+    signVisiblePhotos();
+  }, [visibleCount]);
 
   useEffect(() => {
     if (!loadMoreRef.current) return;
@@ -99,7 +104,7 @@ export default function Home() {
       currentStatus === "encerrado"
     ) {
       await fetchEditedPhotos(cleanName);
-    } else {
+    } else if (currentStatus === "escolher_fotografias") {
       await fetchPreviewPhotos(cleanName);
     }
 
@@ -128,22 +133,46 @@ export default function Home() {
           file.name !== ".emptyFolderPlaceholder" && !file.name.startsWith(".")
       ) || [];
 
-    const photoList: Photo[] = await Promise.all(
-      files.map(async (file) => {
-        const fullPath = `${clientName}/previews/${file.name}`;
-
-        const { data: signedUrl } = await supabase.storage
-          .from("photos")
-          .createSignedUrl(fullPath, 60 * 60);
-
-        return {
-          name: file.name,
-          url: signedUrl?.signedUrl || "",
-        };
-      })
-    );
+    const photoList: Photo[] = files.map((file) => ({
+      name: file.name,
+      path: `${clientName}/previews/${file.name}`,
+      url: "",
+    }));
 
     setPhotos(photoList);
+  };
+
+  const signVisiblePhotos = async () => {
+    setPhotos((currentPhotos) => {
+      const photosToSign = currentPhotos
+        .slice(0, visibleCount)
+        .filter((photo) => !photo.url);
+
+      if (photosToSign.length === 0) return currentPhotos;
+
+      Promise.all(
+        photosToSign.map(async (photo) => {
+          const { data } = await supabase.storage
+            .from("photos")
+            .createSignedUrl(photo.path, 60 * 60);
+
+          return {
+            path: photo.path,
+            url: data?.signedUrl || "",
+          };
+        })
+      ).then((signedPhotos) => {
+        setPhotos((latestPhotos) =>
+          latestPhotos.map((photo) => {
+            const signed = signedPhotos.find((item) => item.path === photo.path);
+
+            return signed ? { ...photo, url: signed.url } : photo;
+          })
+        );
+      });
+
+      return currentPhotos;
+    });
   };
 
   const fetchEditedPhotos = async (clientName: string) => {
@@ -176,6 +205,7 @@ export default function Home() {
 
         return {
           name: file.name,
+          path: fullPath,
           url: signedUrl?.signedUrl || "",
         };
       })
@@ -184,13 +214,13 @@ export default function Home() {
     setEditedPhotos(photoList);
   };
 
-  const togglePhoto = (photoUrl: string) => {
+  const togglePhoto = (photoName: string) => {
     setSuccess(false);
 
     setSelected((prev) =>
-      prev.includes(photoUrl)
-        ? prev.filter((p) => p !== photoUrl)
-        : [...prev, photoUrl]
+      prev.includes(photoName)
+        ? prev.filter((p) => p !== photoName)
+        : [...prev, photoName]
     );
   };
 
@@ -204,9 +234,9 @@ export default function Home() {
 
     const cleanName = normalizeName(cliente);
 
-    const rows = selected.map((photo) => ({
+    const rows = selected.map((photoName) => ({
       client_name: cleanName,
-      photo_name: photo,
+      photo_name: photoName,
     }));
 
     const { error } = await supabase.from("selections").insert(rows);
@@ -244,13 +274,20 @@ export default function Home() {
     setStatus("encerrado");
   };
 
+  const wait = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
   const downloadAll = async () => {
     for (const photo of editedPhotos) {
       const link = document.createElement("a");
       link.href = photo.url;
       link.download = photo.name;
       link.target = "_blank";
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
+
+      await wait(600);
     }
 
     await markAsDownloaded();
@@ -258,7 +295,16 @@ export default function Home() {
 
   const nextPhoto = () => {
     if (activeIndex === null) return;
-    setActiveIndex((activeIndex + 1) % photos.length);
+
+    const nextIndex = (activeIndex + 1) % photos.length;
+
+    if (nextIndex >= visibleCount) {
+      setVisibleCount((prev) =>
+        Math.min(prev + PHOTOS_PER_LOAD, photos.length)
+      );
+    }
+
+    setActiveIndex(nextIndex);
   };
 
   const previousPhoto = () => {
@@ -278,33 +324,74 @@ export default function Home() {
     );
   }
 
-  if (status === "aguardando_edicao") {
-    return (
-      <main style={page}>
-        <section style={hero}>
-          <p style={smallTitle}>Afrikanitas Studio</p>
-          <h1 style={title}>Aguardando edição</h1>
-          <p style={intro}>
-            As suas fotografias foram recebidas com sucesso. Agora a nossa
-            equipa vai preparar a sua sessão com cuidado.
-          </p>
-        </section>
-      </main>
-    );
-  }
+ if (status === "aguardando_edicao") {
+  return (
+    <main style={page}>
+      <section style={hero}>
+        <p style={smallTitle}>Afrikanitas Studio</p>
+
+        <h1 style={title}>Seleção recebida ✨</h1>
+
+        <p style={intro}>
+          Recebemos a sua seleção com sucesso.
+        </p>
+
+        <p
+          style={{
+            marginTop: "18px",
+            fontSize: "17px",
+            lineHeight: 1.7,
+            color: "GrayText",
+            maxWidth: "620px",
+            marginInline: "auto",
+          }}
+        >
+          A nossa equipa já começou o processo de edição da sua sessão.
+          Assim que as fotografias finais estiverem prontas, enviaremos o link
+          de download diretamente no seu WhatsApp.
+        </p>
+
+        <div
+          style={{
+            marginTop: "30px",
+            width: "70px",
+            height: "70px",
+            borderRadius: "50%",
+            border: "3px solid rgba(120,120,120,0.2)",
+            borderTop: "3px solid #111",
+            marginInline: "auto",
+            animation: "spin 1s linear infinite",
+          }}
+        />
+
+        <style jsx>{`
+          @keyframes spin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
+        `}</style>
+      </section>
+    </main>
+  );
+}
 
   if (status === "fotos_disponiveis" || status === "encerrado") {
     return (
       <main style={page}>
         <section style={hero}>
           <p style={smallTitle}>Afrikanitas Studio</p>
-          <h1 style={title}>Fotos disponíveis para baixar</h1>
+          <h1 style={title}>
+            {status === "encerrado"
+              ? "Sessão encerrada"
+              : "Fotos disponíveis para baixar"}
+          </h1>
           <p style={intro}>
             A sua galeria final está pronta. Pode baixar as suas fotografias
             editadas.
           </p>
 
-          {editedPhotos.length > 0 && (
+          {editedPhotos.length > 0 && status !== "encerrado" && (
             <button onClick={downloadAll} style={button}>
               Baixar fotografias
             </button>
@@ -313,7 +400,7 @@ export default function Home() {
 
         <section style={grid}>
           {editedPhotos.map((photo) => (
-            <a key={photo.url} href={photo.url} target="_blank">
+            <a key={photo.path} href={photo.url} target="_blank">
               <img src={photo.url} alt={photo.name} style={photoImage} />
             </a>
           ))}
@@ -326,12 +413,11 @@ export default function Home() {
     <main style={page}>
       <section style={hero}>
         <p style={smallTitle}>Galeria Privada</p>
-
         <h1 style={title}>Afrikanitas Studio</h1>
 
         <p style={intro}>
-          Escolha as suas fotografias favoritas. Clique numa fotografia para
-          abrir em destaque.
+          Escolha as suas fotografias favoritas. Depois vamos preparar a edição
+          com todo o cuidado.
         </p>
 
         <p style={clientText}>
@@ -355,12 +441,12 @@ export default function Home() {
         <>
           <section style={grid}>
             {visiblePhotos.map((photo, index) => {
-              const isSelected = selected.includes(photo.url);
+              const isSelected = selected.includes(photo.name);
 
               return (
-                <div key={photo.url} style={photoCard}>
+                <div key={photo.path} style={photoCard}>
                   <button
-                    onClick={() => togglePhoto(photo.url)}
+                    onClick={() => togglePhoto(photo.name)}
                     style={{
                       ...heartButton,
                       background: isSelected ? "#111" : "rgba(255,255,255,0.9)",
@@ -370,15 +456,18 @@ export default function Home() {
                     ♥
                   </button>
 
-                  <img
-                    src={photo.url}
-                    alt={photo.name}
-                    style={photoImage}
-                    onClick={() => setActiveIndex(index)}
-                    loading="lazy"
-                    decoding="async"
-                    fetchPriority={index < 6 ? "high" : "low"}
-                  />
+                  {photo.url ? (
+                    <img
+                      src={photo.url}
+                      alt={photo.name}
+                      style={photoImage}
+                      onClick={() => setActiveIndex(index)}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <div style={photoPlaceholder}>A carregar...</div>
+                  )}
                 </div>
               );
             })}
@@ -400,7 +489,7 @@ export default function Home() {
         {loading ? "A enviar..." : "Enviar Seleção"}
       </button>
 
-      {activePhoto && (
+      {activePhoto && activePhoto.url && (
         <div style={modalOverlay} onClick={() => setActiveIndex(null)}>
           <div style={modalContent} onClick={(e) => e.stopPropagation()}>
             <button style={closeButton} onClick={() => setActiveIndex(null)}>
@@ -419,16 +508,16 @@ export default function Home() {
             />
 
             <button
-              onClick={() => togglePhoto(activePhoto.url)}
+              onClick={() => togglePhoto(activePhoto.name)}
               style={{
                 ...modalFavoriteButton,
-                background: selected.includes(activePhoto.url)
+                background: selected.includes(activePhoto.name)
                   ? "#111"
                   : "rgba(255,255,255,0.95)",
-                color: selected.includes(activePhoto.url) ? "#fff" : "#111",
+                color: selected.includes(activePhoto.name) ? "#fff" : "#111",
               }}
             >
-              {selected.includes(activePhoto.url)
+              {selected.includes(activePhoto.name)
                 ? "♥ Selecionada"
                 : "♡ Selecionar fotografia"}
             </button>
@@ -531,6 +620,16 @@ const photoImage = {
   display: "block",
   cursor: "pointer",
   borderRadius: "12px",
+};
+
+const photoPlaceholder = {
+  width: "100%",
+  aspectRatio: "1 / 1",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: "12px",
+  color: "GrayText",
 };
 
 const heartButton = {
